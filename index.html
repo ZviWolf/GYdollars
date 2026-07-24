@@ -45,6 +45,39 @@
     padding: 8px 12px;
     border-radius: 8px;
   }
+  #saveBtn {
+    flex-shrink: 0;
+    background: #22c55e;
+    border: none;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-right: 6px;
+  }
+  .headerBtns {
+    display: flex;
+    align-items: center;
+  }
+  #fabAdd {
+    position: fixed;
+    right: 20px;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    font-size: 30px;
+    font-weight: 400;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+  }
   #list {
     padding: 12px;
     max-width: 600px;
@@ -102,37 +135,6 @@
     color: #64748b;
     font-size: 18px;
     padding: 4px 8px;
-  }
-  #addBar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: #1e293b;
-    border-top: 1px solid #334155;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-    display: flex;
-    gap: 8px;
-    max-width: 600px;
-    margin: 0 auto;
-  }
-  #newName {
-    flex: 1;
-    padding: 12px 14px;
-    border-radius: 10px;
-    border: 1px solid #334155;
-    background: #0f172a;
-    color: white;
-    font-size: 16px;
-  }
-  #addBtn {
-    padding: 12px 18px;
-    border-radius: 10px;
-    border: none;
-    background: #3b82f6;
-    color: white;
-    font-weight: 700;
-    font-size: 16px;
   }
   .empty {
     text-align: center;
@@ -311,14 +313,25 @@
       <div class="headerTitle">🏕️ $GY Counter</div>
       <div class="subtitle" id="statusLine">loading...</div>
     </div>
-    <button id="logoutBtn">Log out</button>
+    <div class="headerBtns">
+      <button id="saveBtn">Save</button>
+      <button id="logoutBtn">Log out</button>
+    </div>
   </header>
 
   <div id="list"></div>
 
-  <div id="addBar">
-    <input id="newName" placeholder="Add camper name..." />
-    <button id="addBtn">Add</button>
+  <button id="fabAdd" aria-label="Add camper">+</button>
+
+  <div id="addOverlay" class="overlay" style="display:none;">
+    <div class="modal">
+      <h3>Add camper</h3>
+      <input id="newName" placeholder="Camper name..." />
+      <div class="modal-btns">
+        <button id="cancelAdd" style="background:#334155;color:white;">Cancel</button>
+        <button id="confirmAdd" style="background:#3b82f6;color:white;">Add</button>
+      </div>
+    </div>
   </div>
 
   <div id="delOverlay" class="overlay" style="display:none;">
@@ -326,7 +339,7 @@
       <h3>Remove camper?</h3>
       <p id="delPrompt"></p>
       <input id="delInput" placeholder="Type name to confirm" autocapitalize="none" />
-      <p style="font-size:12px;color:#64748b;margin-top:-6px;">Case-sensitive — must match exactly.</p>
+      <p style="font-size:12px;color:#64748b;margin-top:-6px;">case sensitive — must match exactly.</p>
       <div class="modal-btns">
         <button id="cancelDel">Cancel</button>
         <button id="confirmDel" disabled>Remove</button>
@@ -392,7 +405,11 @@
   const listEl = document.getElementById('list');
   const statusLine = document.getElementById('statusLine');
   const newNameInput = document.getElementById('newName');
-  const addBtn = document.getElementById('addBtn');
+  const fabAdd = document.getElementById('fabAdd');
+  const addOverlay = document.getElementById('addOverlay');
+  const cancelAdd = document.getElementById('cancelAdd');
+  const confirmAdd = document.getElementById('confirmAdd');
+  const saveBtn = document.getElementById('saveBtn');
   const delOverlay = document.getElementById('delOverlay');
   const delPrompt = document.getElementById('delPrompt');
   const delInput = document.getElementById('delInput');
@@ -461,6 +478,9 @@
 
   logoutBtn.addEventListener('click', () => {
     logoutOverlay.style.display = 'flex';
+  });
+  saveBtn.addEventListener('click', () => {
+    saveCampers();
   });
   cancelLogout.addEventListener('click', () => {
     logoutOverlay.style.display = 'none';
@@ -539,6 +559,10 @@
     statusLine.textContent = msg;
   }
 
+  function trackedLabel() {
+    return campers.length + ' ' + (campers.length === 1 ? 'camper' : 'campers') + ' tracked';
+  }
+
   async function loadCampers() {
     setStatus('loading...');
     try {
@@ -550,7 +574,7 @@
       setStatus('load failed');
     }
     render();
-    setStatus(campers.length + ' camper(s) tracked');
+    setStatus(trackedLabel());
   }
 
   let saveChain = Promise.resolve();
@@ -562,7 +586,7 @@
         const ref = doc(db, 'userData', currentUid);
         await setDoc(ref, { campers: snapshot });
         setStatus('saved');
-        setTimeout(() => setStatus(campers.length + ' camper(s) tracked'), 900);
+        setTimeout(() => setStatus(trackedLabel()), 900);
       } catch (e) {
         setStatus('save failed — try again');
       }
@@ -573,7 +597,7 @@
   function render() {
     listEl.innerHTML = '';
     if (campers.length === 0) {
-      listEl.innerHTML = '<div class="empty">No campers yet. Add one below 👇</div>';
+      listEl.innerHTML = '<div class="empty">No campers yet. Tap ➕ to add one.</div>';
       return;
     }
     campers.forEach(c => {
@@ -659,18 +683,40 @@
     return Date.now().toString(36) + Math.random().toString(36).slice(2);
   }
 
+  function openAddModal() {
+    newNameInput.value = '';
+    addOverlay.style.display = 'flex';
+    setTimeout(() => newNameInput.focus(), 50);
+  }
+
+  function closeAddModal() {
+    addOverlay.style.display = 'none';
+  }
+
   function addCamper() {
     const name = newNameInput.value.trim();
     if (!name) return;
     campers.push({ id: makeId(), name, count: 0 });
-    newNameInput.value = '';
     render();
     saveCampers();
+    closeAddModal();
   }
 
-  addBtn.addEventListener('click', addCamper);
+  fabAdd.addEventListener('click', openAddModal);
+  cancelAdd.addEventListener('click', closeAddModal);
+  confirmAdd.addEventListener('click', addCamper);
   newNameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') addCamper();
+  });
+
+  // Tap outside any modal's content area closes/cancels it
+  [delOverlay, logoutOverlay, addOverlay].forEach(overlay => {
+    overlay.addEventListener('click', (e) => {
+      if (e.target !== overlay) return;
+      if (overlay === delOverlay) closeDeleteModal();
+      else if (overlay === logoutOverlay) logoutOverlay.style.display = 'none';
+      else if (overlay === addOverlay) closeAddModal();
+    });
   });
 </script>
 
