@@ -17,16 +17,18 @@
     position: sticky;
     top: 0;
     background: #1e293b;
-    padding: 16px 20px;
-    text-align: center;
-    font-size: 20px;
-    font-weight: 700;
+    padding: 14px 16px;
     border-bottom: 1px solid #334155;
     z-index: 10;
     display: flex;
     align-items: center;
-    justify-content: center;
-    position: relative;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .headerTitle {
+    font-size: 19px;
+    font-weight: 700;
+    white-space: nowrap;
   }
   .subtitle {
     font-size: 12px;
@@ -35,15 +37,12 @@
     margin-top: 2px;
   }
   #logoutBtn {
-    position: absolute;
-    right: 14px;
-    top: 50%;
-    transform: translateY(-50%);
+    flex-shrink: 0;
     background: #334155;
     border: none;
     color: #f1f5f9;
-    font-size: 12px;
-    padding: 6px 10px;
+    font-size: 13px;
+    padding: 8px 12px;
     border-radius: 8px;
   }
   #list {
@@ -198,6 +197,7 @@
   #cancelDel { background: #334155; color: white; }
   #confirmDel { background: #ef4444; color: white; }
   #confirmDel:disabled { background: #7f1d1d; opacity: 0.5; }
+  #cancelLogout { background: #334155; color: white; }
 
   /* Auth screen */
   #authScreen {
@@ -277,9 +277,11 @@
     <h1>🏕️ $GY Counter</h1>
     <div class="tag">Sign in to access your camper list</div>
     <div class="authError" id="authError"></div>
-    <input id="authEmail" type="email" placeholder="Email" autocapitalize="none" />
-    <input id="authPassword" type="password" placeholder="Password" />
-    <button class="primary" id="authSubmit">Log In</button>
+    <form id="authForm">
+      <input id="authEmail" type="email" name="email" placeholder="Email" autocapitalize="none" autocomplete="username" />
+      <input id="authPassword" type="password" name="password" placeholder="Password" autocomplete="current-password" />
+      <button class="primary" type="submit" id="authSubmit">Log In</button>
+    </form>
     <div class="switchMode">
       <span id="switchText">No account?</span> <a href="#" id="switchLink">Sign up</a>
     </div>
@@ -305,8 +307,10 @@
 <!-- APP SCREEN -->
 <div id="appScreen">
   <header>
-    🏕️ $GY Counter
-    <div class="subtitle" id="statusLine">loading...</div>
+    <div>
+      <div class="headerTitle">🏕️ $GY Counter</div>
+      <div class="subtitle" id="statusLine">loading...</div>
+    </div>
     <button id="logoutBtn">Log out</button>
   </header>
 
@@ -326,6 +330,17 @@
       <div class="modal-btns">
         <button id="cancelDel">Cancel</button>
         <button id="confirmDel" disabled>Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="logoutOverlay" class="overlay" style="display:none;">
+    <div class="modal">
+      <h3>Log out?</h3>
+      <p>You'll need to log back in to see your camper list.</p>
+      <div class="modal-btns">
+        <button id="cancelLogout">Cancel</button>
+        <button id="confirmLogout" style="background:#ef4444;color:white;">Log out</button>
       </div>
     </div>
   </div>
@@ -358,6 +373,7 @@
   // ---- Elements ----
   const authScreen = document.getElementById('authScreen');
   const appScreen = document.getElementById('appScreen');
+  const authForm = document.getElementById('authForm');
   const authEmail = document.getElementById('authEmail');
   const authPassword = document.getElementById('authPassword');
   const authSubmit = document.getElementById('authSubmit');
@@ -384,6 +400,10 @@
   const confirmDel = document.getElementById('confirmDel');
   let pendingDeleteId = null;
 
+  const logoutOverlay = document.getElementById('logoutOverlay');
+  const cancelLogout = document.getElementById('cancelLogout');
+  const confirmLogout = document.getElementById('confirmLogout');
+
   let isSignUpMode = false;
   let campers = []; // [{id, name, count}]
   let currentUid = null;
@@ -395,6 +415,7 @@
     authSubmit.textContent = isSignUpMode ? 'Sign Up' : 'Log In';
     switchText.textContent = isSignUpMode ? 'Already have an account?' : 'No account?';
     switchLink.textContent = isSignUpMode ? 'Log in' : 'Sign up';
+    authPassword.autocomplete = isSignUpMode ? 'new-password' : 'current-password';
     authError.style.display = 'none';
   });
 
@@ -403,7 +424,8 @@
     authError.style.display = 'block';
   }
 
-  authSubmit.addEventListener('click', async () => {
+  authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
     const email = authEmail.value.trim();
     const password = authPassword.value;
     if (!email || !password) {
@@ -437,7 +459,16 @@
     }
   }
 
-  logoutBtn.addEventListener('click', () => signOut(auth));
+  logoutBtn.addEventListener('click', () => {
+    logoutOverlay.style.display = 'flex';
+  });
+  cancelLogout.addEventListener('click', () => {
+    logoutOverlay.style.display = 'none';
+  });
+  confirmLogout.addEventListener('click', () => {
+    logoutOverlay.style.display = 'none';
+    signOut(auth);
+  });
   verifyLogoutLink.addEventListener('click', (e) => { e.preventDefault(); signOut(auth); });
 
   resendLink.addEventListener('click', async (e) => {
@@ -551,7 +582,7 @@
       row.innerHTML = `
         <div class="info">
           <div class="name">${escapeHtml(c.name)}</div>
-          <div class="count">${c.count} camp $</div>
+          <div class="count">${c.count} $GY</div>
         </div>
         <div class="btns">
           <button class="step minus" data-id="${c.id}" data-action="minus">−</button>
@@ -640,13 +671,6 @@
   addBtn.addEventListener('click', addCamper);
   newNameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') addCamper();
-  });
-
-  authEmail.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') authSubmit.click();
-  });
-  authPassword.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') authSubmit.click();
   });
 </script>
 
