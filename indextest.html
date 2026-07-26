@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>$GY Counter</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f172a;
+    color: #f1f5f9;
+    padding-bottom: 100px;
+  }
+  header {
+    position: sticky;
+    top: 0;
+    background: #1e293b;
+    padding: 14px 16px;
+    border-bottom: 1px solid #334155;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .headerTitle {
+    font-size: 19px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .subtitle {
+    font-size: 12px;
+    font-weight: 400;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+  #logoutBtn {
+    flex-shrink: 0;
+    background: #334155;
+    border: none;
+    color: #f1f5f9;
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: 8px;
+  }
+  #saveBtn {
+    flex-shrink: 0;
+    background: #22c55e;
+    border: none;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-right: 6px;
+  }
+  .headerBtns {
+    display: flex;
+    align-items: center;
+  }
+  #fabAdd {
+    position: fixed;
+    right: 20px;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    font-size: 30px;
+    font-weight: 400;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+  }
+  #list {
+    padding: 12px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .camper {
+    background: #1e293b;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .info {
+    flex: 1;
+    min-width: 0;
+  }
+  .name {
+    font-size: 17px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .count {
+    font-size: 14px;
+    color: #4ade80;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+  .btns {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  button.step {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: none;
+    font-size: 22px;
+    font-weight: 700;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  button.minus { background: #ef4444; }
+  button.plus { background: #22c55e; }
+  button.del {
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 18px;
+    padding: 4px 8px;
+  }
+  .empty {
+    text-align: center;
+    color: #64748b;
+    padding: 40px 20px;
+  }
+  .status {
+    text-align: center;
+    font-size: 12px;
+    color: #64748b;
+    padding: 6px;
+  }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 20px;
+  }
+  .modal {
+    background: #1e293b;
+    border-radius: 16px;
+    padding: 20px;
+    width: 100%;
+    max-width: 340px;
+  }
+  .modal h3 {
+    margin: 0 0 8px 0;
+    font-size: 17px;
+  }
+  .modal p {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: #94a3b8;
+  }
+  .modal input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: white;
+    font-size: 16px;
+    margin-bottom: 12px;
+  }
+  .modal-btns {
+    display: flex;
+    gap: 8px;
+  }
+  .modal-btns button {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  #cancelDel { background: #334155; color: white; }
+  #confirmDel { background: #ef4444; color: white; }
+  #confirmDel:disabled { background: #7f1d1d; opacity: 0.5; }
+  #cancelLogout { background: #334155; color: white; }
+
+  /* Auth screen */
+  #authScreen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .authBox {
+    background: #1e293b;
+    border-radius: 18px;
+    padding: 28px 22px;
+    width: 100%;
+    max-width: 360px;
+  }
+  .authBox h1 {
+    font-size: 22px;
+    text-align: center;
+    margin: 0 0 4px 0;
+  }
+  .authBox .tag {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  .authBox input {
+    width: 100%;
+    padding: 13px 14px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: white;
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+  .authBox button.primary {
+    width: 100%;
+    padding: 13px;
+    border-radius: 10px;
+    border: none;
+    background: #3b82f6;
+    color: white;
+    font-weight: 700;
+    font-size: 16px;
+    margin-top: 4px;
+  }
+  .switchMode {
+    text-align: center;
+    margin-top: 14px;
+    font-size: 14px;
+    color: #94a3b8;
+  }
+  .switchMode a {
+    color: #60a5fa;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .authError {
+    background: #7f1d1d;
+    color: #fecaca;
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    display: none;
+  }
+  #appScreen { display: none; }
+</style>
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="authScreen">
+  <div class="authBox">
+    <h1>🏕️ $GY Counter</h1>
+    <div class="tag">Sign in to access your camper list</div>
+    <div class="authError" id="authError"></div>
+    <form id="authForm">
+      <input id="authEmail" type="email" name="email" placeholder="Email" autocapitalize="none" autocomplete="username" />
+      <input id="authPassword" type="password" name="password" placeholder="Password" autocomplete="current-password" />
+      <input id="authBunk" type="tel" inputmode="numeric" pattern="[0-9]*" placeholder="Bunk number" style="display:none;" />
+      <button class="primary" type="submit" id="authSubmit">Log In</button>
+    </form>
+    <div class="switchMode">
+      <span id="switchText">No account?</span> <a href="#" id="switchLink">Sign up</a>
+    </div>
+  </div>
+</div>
+
+<!-- VERIFY EMAIL SCREEN -->
+<div id="verifyScreen" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:20px;">
+  <div class="authBox">
+    <h1>📧 Check your email</h1>
+    <div class="tag">We sent a verification link to <span id="verifyEmailAddr" style="color:#f1f5f9;"></span></div>
+    <div class="authError" id="verifyError"></div>
+    <button class="primary" id="iVerifiedBtn">I've verified — Continue</button>
+    <div class="switchMode">
+      <a href="#" id="resendLink">Resend email</a>
+    </div>
+    <div class="switchMode">
+      <a href="#" id="verifyLogoutLink">Log out</a>
+    </div>
+  </div>
+</div>
+
+<!-- BUNK NUMBER REQUIRED SCREEN (no skip option) -->
+<div id="bunkScreen" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:20px;">
+  <div class="authBox">
+    <h1>🛏️ Bunk number</h1>
+    <div class="tag">We need your bunk number to continue. This only appears once.</div>
+    <div class="authError" id="bunkError"></div>
+    <form id="bunkForm">
+      <input id="bunkInput" type="tel" inputmode="numeric" pattern="[0-9]*" placeholder="Bunk number" />
+      <button class="primary" type="submit" id="bunkSubmit">Continue</button>
+    </form>
+  </div>
+</div>
+
+<!-- APP SCREEN -->
+<div id="appScreen">
+  <header>
+    <div>
+      <div class="headerTitle">🏕️ $GY Counter</div>
+      <div class="subtitle" id="statusLine">loading...</div>
+      <div class="subtitle" id="bunkLine" style="display:none;"></div>
+    </div>
+    <div class="headerBtns">
+      <button id="saveBtn">Save</button>
+      <button id="logoutBtn">Log out</button>
+    </div>
+  </header>
+
+  <div id="list"></div>
+
+  <button id="fabAdd" aria-label="Add camper">+</button>
+
+  <div id="addOverlay" class="overlay" style="display:none;">
+    <div class="modal">
+      <h3>Add camper</h3>
+      <input id="newName" placeholder="Camper name..." />
+      <div class="modal-btns">
+        <button id="cancelAdd" style="background:#334155;color:white;">Cancel</button>
+        <button id="confirmAdd" style="background:#3b82f6;color:white;">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="delOverlay" class="overlay" style="display:none;">
+    <div class="modal">
+      <h3>Remove camper?</h3>
+      <p id="delPrompt"></p>
+      <input id="delInput" placeholder="Type name to confirm" autocapitalize="none" />
+      <p style="font-size:12px;color:#64748b;margin-top:-6px;">case sensitive — must match exactly.</p>
+      <div class="modal-btns">
+        <button id="cancelDel">Cancel</button>
+        <button id="confirmDel" disabled>Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="logoutOverlay" class="overlay" style="display:none;">
+    <div class="modal">
+      <h3>Log out?</h3>
+      <p>You'll need to log back in to see your camper list.</p>
+      <div class="modal-btns">
+        <button id="cancelLogout">Cancel</button>
+        <button id="confirmLogout" style="background:#ef4444;color:white;">Log out</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import {
+    getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+    onAuthStateChanged, signOut, sendEmailVerification, reload
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, setDoc
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBeLAjEl858UbzFRokiDQrTFe88tdkHC7o",
+    authDomain: "gydollars-3ee66.firebaseapp.com",
+    projectId: "gydollars-3ee66",
+    storageBucket: "gydollars-3ee66.firebasestorage.app",
+    messagingSenderId: "352231353369",
+    appId: "1:352231353369:web:e8f8ca3a184c5866018e88",
+    measurementId: "G-JWQ4884HDT"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // ---- Elements ----
+  const authScreen = document.getElementById('authScreen');
+  const appScreen = document.getElementById('appScreen');
+  const authForm = document.getElementById('authForm');
+  const authEmail = document.getElementById('authEmail');
+  const authPassword = document.getElementById('authPassword');
+  const authBunk = document.getElementById('authBunk');
+  const authSubmit = document.getElementById('authSubmit');
+  const authError = document.getElementById('authError');
+  const switchLink = document.getElementById('switchLink');
+  const switchText = document.getElementById('switchText');
+  const logoutBtn = document.getElementById('logoutBtn');
+
+  const bunkScreen = document.getElementById('bunkScreen');
+  const bunkForm = document.getElementById('bunkForm');
+  const bunkInput = document.getElementById('bunkInput');
+  const bunkSubmit = document.getElementById('bunkSubmit');
+  const bunkError = document.getElementById('bunkError');
+  const bunkLine = document.getElementById('bunkLine');
+
+  const verifyScreen = document.getElementById('verifyScreen');
+  const verifyEmailAddr = document.getElementById('verifyEmailAddr');
+  const verifyError = document.getElementById('verifyError');
+  const iVerifiedBtn = document.getElementById('iVerifiedBtn');
+  const resendLink = document.getElementById('resendLink');
+  const verifyLogoutLink = document.getElementById('verifyLogoutLink');
+
+  const listEl = document.getElementById('list');
+  const statusLine = document.getElementById('statusLine');
+  const newNameInput = document.getElementById('newName');
+  const fabAdd = document.getElementById('fabAdd');
+  const addOverlay = document.getElementById('addOverlay');
+  const cancelAdd = document.getElementById('cancelAdd');
+  const confirmAdd = document.getElementById('confirmAdd');
+  const saveBtn = document.getElementById('saveBtn');
+  const delOverlay = document.getElementById('delOverlay');
+  const delPrompt = document.getElementById('delPrompt');
+  const delInput = document.getElementById('delInput');
+  const cancelDel = document.getElementById('cancelDel');
+  const confirmDel = document.getElementById('confirmDel');
+  let pendingDeleteId = null;
+
+  const logoutOverlay = document.getElementById('logoutOverlay');
+  const cancelLogout = document.getElementById('cancelLogout');
+  const confirmLogout = document.getElementById('confirmLogout');
+
+  let isSignUpMode = false;
+  let campers = []; // [{id, name, count}]
+  let currentUid = null;
+
+  // ---- Auth mode toggle ----
+  switchLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    isSignUpMode = !isSignUpMode;
+    authSubmit.textContent = isSignUpMode ? 'Sign Up' : 'Log In';
+    switchText.textContent = isSignUpMode ? 'Already have an account?' : 'No account?';
+    switchLink.textContent = isSignUpMode ? 'Log in' : 'Sign up';
+    authPassword.autocomplete = isSignUpMode ? 'new-password' : 'current-password';
+    authBunk.style.display = isSignUpMode ? 'block' : 'none';
+    authError.style.display = 'none';
+  });
+
+  function showAuthError(msg) {
+    authError.textContent = msg;
+    authError.style.display = 'block';
+  }
+
+  authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = authEmail.value.trim();
+    const password = authPassword.value;
+    const bunk = authBunk.value.trim();
+    if (!email || !password) {
+      showAuthError('Enter an email and password.');
+      return;
+    }
+    if (isSignUpMode && !bunk) {
+      showAuthError('Enter your bunk number.');
+      return;
+    }
+    authSubmit.disabled = true;
+    authError.style.display = 'none';
+    try {
+      if (isSignUpMode) {
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        await sendEmailVerification(cred.user);
+        const ref = doc(db, 'userData', cred.user.uid);
+        await setDoc(ref, { campers: [], bunkNumber: bunk });
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (e) {
+      showAuthError(friendlyAuthError(e.code));
+    }
+    authSubmit.disabled = false;
+  });
+
+  function friendlyAuthError(code) {
+    switch (code) {
+      case 'auth/email-already-in-use': return 'That email already has an account. Try logging in.';
+      case 'auth/invalid-email': return 'That email address looks invalid.';
+      case 'auth/weak-password': return 'Password should be at least 6 characters.';
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+      case 'auth/invalid-credential': return 'Incorrect email or password.';
+      default: return 'Something went wrong. Try again.';
+    }
+  }
+
+  logoutBtn.addEventListener('click', () => {
+    logoutOverlay.style.display = 'flex';
+  });
+  saveBtn.addEventListener('click', () => {
+    saveCampers();
+  });
+  cancelLogout.addEventListener('click', () => {
+    logoutOverlay.style.display = 'none';
+  });
+  confirmLogout.addEventListener('click', () => {
+    logoutOverlay.style.display = 'none';
+    signOut(auth);
+  });
+  verifyLogoutLink.addEventListener('click', (e) => { e.preventDefault(); signOut(auth); });
+
+  resendLink.addEventListener('click', async (e) => {
+    e.preventDefault();
+    verifyError.style.display = 'none';
+    try {
+      await sendEmailVerification(auth.currentUser);
+      verifyError.style.display = 'block';
+      verifyError.style.background = '#14532d';
+      verifyError.style.color = '#bbf7d0';
+      verifyError.textContent = 'Verification email sent again.';
+    } catch (err) {
+      verifyError.style.display = 'block';
+      verifyError.style.background = '#7f1d1d';
+      verifyError.style.color = '#fecaca';
+      verifyError.textContent = 'Could not resend right now. Try again shortly.';
+    }
+  });
+
+  iVerifiedBtn.addEventListener('click', async () => {
+    if (!auth.currentUser) return;
+    iVerifiedBtn.disabled = true;
+    await reload(auth.currentUser);
+    if (auth.currentUser.emailVerified) {
+      campers = [];
+      render();
+      await checkBunkThenEnter();
+    } else {
+      verifyError.style.display = 'block';
+      verifyError.style.background = '#7f1d1d';
+      verifyError.style.color = '#fecaca';
+      verifyError.textContent = 'Still not verified — check your inbox (and spam folder).';
+    }
+    iVerifiedBtn.disabled = false;
+  });
+
+  // ---- Auth state listener ----
+  function showScreen(which) {
+    authScreen.style.display = which === 'auth' ? 'flex' : 'none';
+    verifyScreen.style.display = which === 'verify' ? 'flex' : 'none';
+    bunkScreen.style.display = which === 'bunk' ? 'flex' : 'none';
+    appScreen.style.display = which === 'app' ? 'block' : 'none';
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      currentUid = user.uid;
+      if (!user.emailVerified) {
+        verifyEmailAddr.textContent = user.email;
+        showScreen('verify');
+        return;
+      }
+      campers = [];
+      render();
+      await checkBunkThenEnter();
+    } else {
+      currentUid = null;
+      campers = [];
+      bunkLine.style.display = 'none';
+      showScreen('auth');
+      authEmail.value = '';
+      authPassword.value = '';
+    }
+  });
+
+  async function checkBunkThenEnter() {
+    setStatus('loading...');
+    try {
+      const ref = doc(db, 'userData', currentUid);
+      const snap = await getDoc(ref);
+      const data = snap.exists() ? snap.data() : {};
+      campers = data.campers || [];
+      const bunk = data.bunkNumber || '';
+      if (!bunk) {
+        showScreen('bunk');
+        bunkInput.value = '';
+        setTimeout(() => bunkInput.focus(), 50);
+        return;
+      }
+      bunkLine.textContent = 'Bunk ' + bunk;
+      bunkLine.style.display = 'block';
+      render();
+      setStatus(trackedLabel());
+      showScreen('app');
+    } catch (e) {
+      campers = [];
+      setStatus('load failed');
+      render();
+      showScreen('app');
+    }
+  }
+
+  bunkForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const bunk = bunkInput.value.trim();
+    if (!bunk) {
+      bunkError.style.display = 'block';
+      bunkError.textContent = 'Enter your bunk number.';
+      return;
+    }
+    bunkSubmit.disabled = true;
+    try {
+      const ref = doc(db, 'userData', currentUid);
+      await setDoc(ref, { bunkNumber: bunk }, { merge: true });
+      bunkLine.textContent = 'Bunk ' + bunk;
+      bunkLine.style.display = 'block';
+      render();
+      setStatus(trackedLabel());
+      showScreen('app');
+    } catch (err) {
+      bunkError.style.display = 'block';
+      bunkError.textContent = 'Could not save — check your connection and try again.';
+    }
+    bunkSubmit.disabled = false;
+  });
+
+  // ---- Firestore load/save ----
+  function setStatus(msg) {
+    statusLine.textContent = msg;
+  }
+
+  function trackedLabel() {
+    return campers.length + ' ' + (campers.length === 1 ? 'camper' : 'campers') + ' tracked';
+  }
+
+  let saveChain = Promise.resolve();
+
+  async function saveCampers() {
+    const snapshot = campers.map(c => ({ ...c })); // freeze current state
+    saveChain = saveChain.then(async () => {
+      try {
+        const ref = doc(db, 'userData', currentUid);
+        await setDoc(ref, { campers: snapshot });
+        setStatus('saved');
+        setTimeout(() => setStatus(trackedLabel()), 900);
+      } catch (e) {
+        setStatus('save failed — try again');
+      }
+    });
+    return saveChain;
+  }
+
+  function render() {
+    listEl.innerHTML = '';
+    if (campers.length === 0) {
+      listEl.innerHTML = '<div class="empty">No campers yet. Tap ➕ to add one.</div>';
+      return;
+    }
+    campers.forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'camper';
+      row.innerHTML = `
+        <div class="info">
+          <div class="name">${escapeHtml(c.name)}</div>
+          <div class="count">${c.count} $GY</div>
+        </div>
+        <div class="btns">
+          <button class="step minus" data-id="${c.id}" data-action="minus">−</button>
+          <button class="step plus" data-id="${c.id}" data-action="plus">+</button>
+          <button class="del" data-id="${c.id}" data-action="del">✕</button>
+        </div>
+      `;
+      listEl.appendChild(row);
+    });
+  }
+
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  listEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const action = btn.dataset.action;
+    const camper = campers.find(c => c.id === id);
+    if (!camper) return;
+
+    if (action === 'plus') {
+      camper.count++;
+      render();
+      saveCampers();
+    } else if (action === 'minus') {
+      if (camper.count > 0) camper.count--;
+      render();
+      saveCampers();
+    } else if (action === 'del') {
+      openDeleteModal(camper);
+    }
+  });
+
+  function openDeleteModal(camper) {
+    pendingDeleteId = camper.id;
+    delPrompt.innerHTML = `Type <strong>${escapeHtml(camper.name)}</strong> exactly to remove them.`;
+    delInput.value = '';
+    confirmDel.disabled = true;
+    delOverlay.style.display = 'flex';
+    setTimeout(() => delInput.focus(), 50);
+  }
+
+  function closeDeleteModal() {
+    delOverlay.style.display = 'none';
+    pendingDeleteId = null;
+  }
+
+  delInput.addEventListener('input', () => {
+    const camper = campers.find(c => c.id === pendingDeleteId);
+    confirmDel.disabled = !camper || delInput.value.trim() !== camper.name;
+  });
+  delInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !confirmDel.disabled) confirmDel.click();
+  });
+
+  cancelDel.addEventListener('click', closeDeleteModal);
+
+  confirmDel.addEventListener('click', () => {
+    const camper = campers.find(c => c.id === pendingDeleteId);
+    if (!camper || delInput.value.trim() !== camper.name) return;
+    campers = campers.filter(c => c.id !== pendingDeleteId);
+    closeDeleteModal();
+    render();
+    saveCampers();
+  });
+
+  function makeId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+  }
+
+  function openAddModal() {
+    newNameInput.value = '';
+    addOverlay.style.display = 'flex';
+    setTimeout(() => newNameInput.focus(), 50);
+  }
+
+  function closeAddModal() {
+    addOverlay.style.display = 'none';
+  }
+
+  function addCamper() {
+    const name = newNameInput.value.trim();
+    if (!name) return;
+    campers.push({ id: makeId(), name, count: 0 });
+    render();
+    saveCampers();
+    closeAddModal();
+  }
+
+  fabAdd.addEventListener('click', openAddModal);
+  cancelAdd.addEventListener('click', closeAddModal);
+  confirmAdd.addEventListener('click', addCamper);
+  newNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addCamper();
+  });
+
+  // Tap outside any modal's content area closes/cancels it
+  [delOverlay, logoutOverlay, addOverlay].forEach(overlay => {
+    overlay.addEventListener('click', (e) => {
+      if (e.target !== overlay) return;
+      if (overlay === delOverlay) closeDeleteModal();
+      else if (overlay === logoutOverlay) logoutOverlay.style.display = 'none';
+      else if (overlay === addOverlay) closeAddModal();
+    });
+  });
+</script>
+
+</body>
+</html>
