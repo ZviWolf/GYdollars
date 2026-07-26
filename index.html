@@ -36,14 +36,10 @@
     color: #94a3b8;
     margin-top: 2px;
   }
-  #logoutBtn {
-    flex-shrink: 0;
-    background: #334155;
-    border: none;
-    color: #f1f5f9;
-    font-size: 13px;
-    padding: 8px 12px;
-    border-radius: 8px;
+  .headerBtns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   #saveBtn {
     flex-shrink: 0;
@@ -54,11 +50,15 @@
     font-weight: 700;
     padding: 8px 12px;
     border-radius: 8px;
-    margin-right: 6px;
   }
-  .headerBtns {
-    display: flex;
-    align-items: center;
+  .btnSecondary {
+    flex-shrink: 0;
+    background: #334155;
+    border: none;
+    color: #f1f5f9;
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: 8px;
   }
   #fabAdd {
     position: fixed;
@@ -78,7 +78,7 @@
     justify-content: center;
     z-index: 20;
   }
-  #list {
+  #list, #hcBunkList, #hcDetailList {
     padding: 12px;
     max-width: 600px;
     margin: 0 auto;
@@ -279,9 +279,10 @@
     <h1>🏕️ $GY Counter</h1>
     <div class="tag">Sign in to access your camper list</div>
     <div class="authError" id="authError"></div>
-    <form id="authForm">
+    <form id="authForm" novalidate>
       <input id="authEmail" type="email" name="email" placeholder="Email" autocapitalize="none" autocomplete="username" />
       <input id="authPassword" type="password" name="password" placeholder="Password" autocomplete="current-password" />
+      <input id="authBunk" type="tel" inputmode="numeric" pattern="[0-9]*" placeholder="Bunk number" style="display:none;" />
       <button class="primary" type="submit" id="authSubmit">Log In</button>
     </form>
     <div class="switchMode">
@@ -306,16 +307,59 @@
   </div>
 </div>
 
+<!-- BUNK NUMBER REQUIRED SCREEN (no skip option) -->
+<div id="bunkScreen" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:20px;">
+  <div class="authBox">
+    <h1>🛏️ Bunk number</h1>
+    <div class="tag">We need your bunk number to continue. This only appears once.</div>
+    <div class="authError" id="bunkError"></div>
+    <form id="bunkForm">
+      <input id="bunkInput" type="tel" inputmode="numeric" pattern="[0-9]*" placeholder="Bunk number" />
+      <button class="primary" type="submit" id="bunkSubmit">Continue</button>
+    </form>
+  </div>
+</div>
+
+<!-- HEAD COUNSELOR: BUNK LIST -->
+<div id="hcScreen" style="display:none;">
+  <header>
+    <div>
+      <div class="headerTitle">🏕️ $GY Counter</div>
+      <div class="subtitle">Head Counselor</div>
+    </div>
+    <div class="headerBtns">
+      <button id="hcRefreshBtn" class="btnSecondary">Refresh</button>
+      <button id="hcLogoutBtn" class="btnSecondary">Log out</button>
+    </div>
+  </header>
+  <div id="hcBunkList"></div>
+</div>
+
+<!-- HEAD COUNSELOR: BUNK DETAIL -->
+<div id="hcDetailScreen" style="display:none;">
+  <header>
+    <div>
+      <div class="headerTitle" id="hcBunkTitle">Bunk</div>
+      <div class="subtitle">Head Counselor</div>
+    </div>
+    <div class="headerBtns">
+      <button id="hcBackBtn" class="btnSecondary">← Back</button>
+    </div>
+  </header>
+  <div id="hcDetailList"></div>
+</div>
+
 <!-- APP SCREEN -->
 <div id="appScreen">
   <header>
     <div>
       <div class="headerTitle">🏕️ $GY Counter</div>
       <div class="subtitle" id="statusLine">loading...</div>
+      <div class="subtitle" id="bunkLine" style="display:none;"></div>
     </div>
     <div class="headerBtns">
       <button id="saveBtn">Save</button>
-      <button id="logoutBtn">Log out</button>
+      <button id="logoutBtn" class="btnSecondary">Log out</button>
     </div>
   </header>
 
@@ -346,15 +390,16 @@
       </div>
     </div>
   </div>
+</div>
 
-  <div id="logoutOverlay" class="overlay" style="display:none;">
-    <div class="modal">
-      <h3>Log out?</h3>
-      <p>You'll need to log back in to see your camper list.</p>
-      <div class="modal-btns">
-        <button id="cancelLogout">Cancel</button>
-        <button id="confirmLogout" style="background:#ef4444;color:white;">Log out</button>
-      </div>
+<!-- GLOBAL: Logout confirmation (accessible from any screen) -->
+<div id="logoutOverlay" class="overlay" style="display:none;">
+  <div class="modal">
+    <h3>Log out?</h3>
+    <p>You'll need to log back in to see your camper list.</p>
+    <div class="modal-btns">
+      <button id="cancelLogout">Cancel</button>
+      <button id="confirmLogout" style="background:#ef4444;color:white;">Log out</button>
     </div>
   </div>
 </div>
@@ -366,7 +411,7 @@
     onAuthStateChanged, signOut, sendEmailVerification, reload
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, setDoc
+    getFirestore, doc, getDoc, setDoc, getDocs, collection
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -382,6 +427,7 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
+  const HEADCOUNSELOR_EMAIL = 'headcounselor@gydollars.internal';
 
   // ---- Elements ----
   const authScreen = document.getElementById('authScreen');
@@ -389,11 +435,29 @@
   const authForm = document.getElementById('authForm');
   const authEmail = document.getElementById('authEmail');
   const authPassword = document.getElementById('authPassword');
+  const authBunk = document.getElementById('authBunk');
   const authSubmit = document.getElementById('authSubmit');
   const authError = document.getElementById('authError');
   const switchLink = document.getElementById('switchLink');
   const switchText = document.getElementById('switchText');
   const logoutBtn = document.getElementById('logoutBtn');
+
+  const bunkScreen = document.getElementById('bunkScreen');
+  const bunkForm = document.getElementById('bunkForm');
+  const bunkInput = document.getElementById('bunkInput');
+  const bunkSubmit = document.getElementById('bunkSubmit');
+  const bunkError = document.getElementById('bunkError');
+  const bunkLine = document.getElementById('bunkLine');
+
+  const hcScreen = document.getElementById('hcScreen');
+  const hcDetailScreen = document.getElementById('hcDetailScreen');
+  const hcBunkList = document.getElementById('hcBunkList');
+  const hcDetailList = document.getElementById('hcDetailList');
+  const hcBunkTitle = document.getElementById('hcBunkTitle');
+  const hcRefreshBtn = document.getElementById('hcRefreshBtn');
+  const hcLogoutBtn = document.getElementById('hcLogoutBtn');
+  const hcBackBtn = document.getElementById('hcBackBtn');
+  let lastBunkMap = {};
 
   const verifyScreen = document.getElementById('verifyScreen');
   const verifyEmailAddr = document.getElementById('verifyEmailAddr');
@@ -426,6 +490,13 @@
   let currentUid = null;
 
   // ---- Auth mode toggle ----
+  function updateBunkFieldVisibility() {
+    const raw = authEmail.value.trim().toLowerCase();
+    const isHC = raw === 'headcounselor';
+    authBunk.style.display = (isSignUpMode && !isHC) ? 'block' : 'none';
+  }
+  authEmail.addEventListener('input', updateBunkFieldVisibility);
+
   switchLink.addEventListener('click', (e) => {
     e.preventDefault();
     isSignUpMode = !isSignUpMode;
@@ -433,6 +504,7 @@
     switchText.textContent = isSignUpMode ? 'Already have an account?' : 'No account?';
     switchLink.textContent = isSignUpMode ? 'Log in' : 'Sign up';
     authPassword.autocomplete = isSignUpMode ? 'new-password' : 'current-password';
+    updateBunkFieldVisibility();
     authError.style.display = 'none';
   });
 
@@ -443,10 +515,17 @@
 
   authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const email = authEmail.value.trim();
+    const rawInput = authEmail.value.trim();
+    const isHC = rawInput.toLowerCase() === 'headcounselor';
+    const email = isHC ? HEADCOUNSELOR_EMAIL : rawInput;
     const password = authPassword.value;
-    if (!email || !password) {
+    const bunk = authBunk.value.trim();
+    if (!rawInput || !password) {
       showAuthError('Enter an email and password.');
+      return;
+    }
+    if (isSignUpMode && !isHC && !bunk) {
+      showAuthError('Enter your bunk number.');
       return;
     }
     authSubmit.disabled = true;
@@ -454,7 +533,11 @@
     try {
       if (isSignUpMode) {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
-        await sendEmailVerification(cred.user);
+        if (!isHC) {
+          await sendEmailVerification(cred.user);
+          const ref = doc(db, 'userData', cred.user.uid);
+          await setDoc(ref, { campers: [], bunkNumber: bunk });
+        }
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
@@ -515,8 +598,7 @@
     if (auth.currentUser.emailVerified) {
       campers = [];
       render();
-      showScreen('app');
-      await loadCampers();
+      await checkBunkThenEnter();
     } else {
       verifyError.style.display = 'block';
       verifyError.style.background = '#7f1d1d';
@@ -526,16 +608,24 @@
     iVerifiedBtn.disabled = false;
   });
 
+  // ---- Auth state listener ----
   function showScreen(which) {
     authScreen.style.display = which === 'auth' ? 'flex' : 'none';
     verifyScreen.style.display = which === 'verify' ? 'flex' : 'none';
+    bunkScreen.style.display = which === 'bunk' ? 'flex' : 'none';
     appScreen.style.display = which === 'app' ? 'block' : 'none';
+    hcScreen.style.display = which === 'hc' ? 'block' : 'none';
+    hcDetailScreen.style.display = which === 'hcDetail' ? 'block' : 'none';
   }
 
-  // ---- Auth state listener ----
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       currentUid = user.uid;
+      if (user.email === HEADCOUNSELOR_EMAIL) {
+        showScreen('hc');
+        await loadAllBunks();
+        return;
+      }
       if (!user.emailVerified) {
         verifyEmailAddr.textContent = user.email;
         showScreen('verify');
@@ -543,15 +633,141 @@
       }
       campers = [];
       render();
-      showScreen('app');
-      await loadCampers();
+      await checkBunkThenEnter();
     } else {
       currentUid = null;
       campers = [];
+      bunkLine.style.display = 'none';
       showScreen('auth');
       authEmail.value = '';
       authPassword.value = '';
     }
+  });
+
+  async function checkBunkThenEnter() {
+    setStatus('loading...');
+    try {
+      const ref = doc(db, 'userData', currentUid);
+      const snap = await getDoc(ref);
+      const data = snap.exists() ? snap.data() : {};
+      campers = data.campers || [];
+      const bunk = data.bunkNumber || '';
+      if (!bunk) {
+        showScreen('bunk');
+        bunkInput.value = '';
+        setTimeout(() => bunkInput.focus(), 50);
+        return;
+      }
+      bunkLine.textContent = 'Bunk ' + bunk;
+      bunkLine.style.display = 'block';
+      render();
+      setStatus(trackedLabel());
+      showScreen('app');
+    } catch (e) {
+      campers = [];
+      setStatus('load failed');
+      render();
+      showScreen('app');
+    }
+  }
+
+  async function loadAllBunks() {
+    hcBunkList.innerHTML = '<div class="empty">Loading bunks...</div>';
+    try {
+      const querySnap = await getDocs(collection(db, 'userData'));
+      const bunkMap = {};
+      querySnap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (!data.bunkNumber) return;
+        const bunk = String(data.bunkNumber);
+        if (!bunkMap[bunk]) bunkMap[bunk] = [];
+        (data.campers || []).forEach(c => bunkMap[bunk].push(c));
+      });
+      lastBunkMap = bunkMap;
+      renderBunkList(bunkMap);
+    } catch (e) {
+      hcBunkList.innerHTML = '<div class="empty">Could not load bunks — check your connection.</div>';
+    }
+  }
+
+  function renderBunkList(bunkMap) {
+    const bunks = Object.keys(bunkMap).sort((a, b) => {
+      const na = parseFloat(a), nb = parseFloat(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b);
+    });
+    hcBunkList.innerHTML = '';
+    if (bunks.length === 0) {
+      hcBunkList.innerHTML = '<div class="empty">No bunks yet.</div>';
+      return;
+    }
+    bunks.forEach(bunk => {
+      const row = document.createElement('div');
+      row.className = 'camper';
+      row.style.cursor = 'pointer';
+      const n = bunkMap[bunk].length;
+      row.innerHTML = `
+        <div class="info">
+          <div class="name">Bunk ${escapeHtml(bunk)}</div>
+          <div class="count" style="color:#94a3b8;">${n} camper${n === 1 ? '' : 's'}</div>
+        </div>
+        <div style="color:#64748b;font-size:22px;">›</div>
+      `;
+      row.addEventListener('click', () => showBunkDetail(bunk));
+      hcBunkList.appendChild(row);
+    });
+  }
+
+  function showBunkDetail(bunk) {
+    const list = lastBunkMap[bunk] || [];
+    hcBunkTitle.textContent = 'Bunk ' + bunk;
+    hcDetailList.innerHTML = '';
+    if (list.length === 0) {
+      hcDetailList.innerHTML = '<div class="empty">No campers in this bunk yet.</div>';
+    } else {
+      list.forEach(c => {
+        const row = document.createElement('div');
+        row.className = 'camper';
+        row.innerHTML = `
+          <div class="info">
+            <div class="name">${escapeHtml(c.name)}</div>
+            <div class="count">${c.count} $GY</div>
+          </div>
+        `;
+        hcDetailList.appendChild(row);
+      });
+    }
+    showScreen('hcDetail');
+  }
+
+  hcRefreshBtn.addEventListener('click', loadAllBunks);
+  hcBackBtn.addEventListener('click', () => showScreen('hc'));
+  hcLogoutBtn.addEventListener('click', () => {
+    logoutOverlay.style.display = 'flex';
+  });
+
+  bunkForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const bunk = bunkInput.value.trim();
+    if (!bunk) {
+      bunkError.style.display = 'block';
+      bunkError.textContent = 'Enter your bunk number.';
+      return;
+    }
+    bunkSubmit.disabled = true;
+    try {
+      const ref = doc(db, 'userData', currentUid);
+      await setDoc(ref, { bunkNumber: bunk }, { merge: true });
+      bunkLine.textContent = 'Bunk ' + bunk;
+      bunkLine.style.display = 'block';
+      render();
+      setStatus(trackedLabel());
+      showScreen('app');
+    } catch (err) {
+      bunkError.style.display = 'block';
+      bunkError.textContent = 'Could not save — check your connection and try again.';
+    }
+    bunkSubmit.disabled = false;
   });
 
   // ---- Firestore load/save ----
@@ -563,20 +779,6 @@
     return campers.length + ' ' + (campers.length === 1 ? 'camper' : 'campers') + ' tracked';
   }
 
-  async function loadCampers() {
-    setStatus('loading...');
-    try {
-      const ref = doc(db, 'userData', currentUid);
-      const snap = await getDoc(ref);
-      campers = snap.exists() ? (snap.data().campers || []) : [];
-    } catch (e) {
-      campers = [];
-      setStatus('load failed');
-    }
-    render();
-    setStatus(trackedLabel());
-  }
-
   let saveChain = Promise.resolve();
 
   async function saveCampers() {
@@ -584,7 +786,7 @@
     saveChain = saveChain.then(async () => {
       try {
         const ref = doc(db, 'userData', currentUid);
-        await setDoc(ref, { campers: snapshot });
+        await setDoc(ref, { campers: snapshot }, { merge: true });
         setStatus('saved');
         setTimeout(() => setStatus(trackedLabel()), 900);
       } catch (e) {
