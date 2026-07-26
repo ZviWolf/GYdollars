@@ -279,7 +279,7 @@
     <h1>🏕️ $GY Counter</h1>
     <div class="tag">Sign in to access your camper list</div>
     <div class="authError" id="authError"></div>
-    <form id="authForm">
+    <form id="authForm" novalidate>
       <input id="authEmail" type="email" name="email" placeholder="Email" autocapitalize="none" autocomplete="username" />
       <input id="authPassword" type="password" name="password" placeholder="Password" autocomplete="current-password" />
       <input id="authBunk" type="tel" inputmode="numeric" pattern="[0-9]*" placeholder="Bunk number" style="display:none;" />
@@ -318,6 +318,30 @@
       <button class="primary" type="submit" id="bunkSubmit">Continue</button>
     </form>
   </div>
+</div>
+
+<!-- HEAD COUNSELOR: BUNK LIST -->
+<div id="hcScreen" style="display:none;">
+  <header>
+    <div>
+      <div class="headerTitle">🏕️ $GY Counter</div>
+      <div class="subtitle">Head Counselor — tap a bunk to view</div>
+    </div>
+    <div class="headerBtns">
+      <button id="hcRefreshBtn" style="margin-right:6px;background:#334155;border:none;color:#f1f5f9;font-size:13px;padding:8px 12px;border-radius:8px;">Refresh</button>
+      <button id="hcLogoutBtn">Log out</button>
+    </div>
+  </header>
+  <div id="hcBunkList"></div>
+</div>
+
+<!-- HEAD COUNSELOR: BUNK DETAIL -->
+<div id="hcDetailScreen" style="display:none;">
+  <header>
+    <button id="hcBackBtn" style="background:#334155;border:none;color:#f1f5f9;font-size:13px;padding:8px 12px;border-radius:8px;">← Back</button>
+    <div class="headerTitle" id="hcBunkTitle">Bunk</div>
+  </header>
+  <div id="hcDetailList"></div>
 </div>
 
 <!-- APP SCREEN -->
@@ -381,7 +405,7 @@
     onAuthStateChanged, signOut, sendEmailVerification, reload
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, setDoc
+    getFirestore, doc, getDoc, setDoc, getDocs, collection
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -397,6 +421,7 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
+  const HEADCOUNSELOR_EMAIL = 'headcounselor@gydollars.internal';
 
   // ---- Elements ----
   const authScreen = document.getElementById('authScreen');
@@ -417,6 +442,16 @@
   const bunkSubmit = document.getElementById('bunkSubmit');
   const bunkError = document.getElementById('bunkError');
   const bunkLine = document.getElementById('bunkLine');
+
+  const hcScreen = document.getElementById('hcScreen');
+  const hcDetailScreen = document.getElementById('hcDetailScreen');
+  const hcBunkList = document.getElementById('hcBunkList');
+  const hcDetailList = document.getElementById('hcDetailList');
+  const hcBunkTitle = document.getElementById('hcBunkTitle');
+  const hcRefreshBtn = document.getElementById('hcRefreshBtn');
+  const hcLogoutBtn = document.getElementById('hcLogoutBtn');
+  const hcBackBtn = document.getElementById('hcBackBtn');
+  let lastBunkMap = {};
 
   const verifyScreen = document.getElementById('verifyScreen');
   const verifyEmailAddr = document.getElementById('verifyEmailAddr');
@@ -449,6 +484,13 @@
   let currentUid = null;
 
   // ---- Auth mode toggle ----
+  function updateBunkFieldVisibility() {
+    const raw = authEmail.value.trim().toLowerCase();
+    const isHC = raw === 'headcounselor';
+    authBunk.style.display = (isSignUpMode && !isHC) ? 'block' : 'none';
+  }
+  authEmail.addEventListener('input', updateBunkFieldVisibility);
+
   switchLink.addEventListener('click', (e) => {
     e.preventDefault();
     isSignUpMode = !isSignUpMode;
@@ -456,7 +498,7 @@
     switchText.textContent = isSignUpMode ? 'Already have an account?' : 'No account?';
     switchLink.textContent = isSignUpMode ? 'Log in' : 'Sign up';
     authPassword.autocomplete = isSignUpMode ? 'new-password' : 'current-password';
-    authBunk.style.display = isSignUpMode ? 'block' : 'none';
+    updateBunkFieldVisibility();
     authError.style.display = 'none';
   });
 
@@ -467,14 +509,16 @@
 
   authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const email = authEmail.value.trim();
+    const rawInput = authEmail.value.trim();
+    const isHC = rawInput.toLowerCase() === 'headcounselor';
+    const email = isHC ? HEADCOUNSELOR_EMAIL : rawInput;
     const password = authPassword.value;
     const bunk = authBunk.value.trim();
-    if (!email || !password) {
+    if (!rawInput || !password) {
       showAuthError('Enter an email and password.');
       return;
     }
-    if (isSignUpMode && !bunk) {
+    if (isSignUpMode && !isHC && !bunk) {
       showAuthError('Enter your bunk number.');
       return;
     }
@@ -483,9 +527,11 @@
     try {
       if (isSignUpMode) {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
-        await sendEmailVerification(cred.user);
-        const ref = doc(db, 'userData', cred.user.uid);
-        await setDoc(ref, { campers: [], bunkNumber: bunk });
+        if (!isHC) {
+          await sendEmailVerification(cred.user);
+          const ref = doc(db, 'userData', cred.user.uid);
+          await setDoc(ref, { campers: [], bunkNumber: bunk });
+        }
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
@@ -562,11 +608,18 @@
     verifyScreen.style.display = which === 'verify' ? 'flex' : 'none';
     bunkScreen.style.display = which === 'bunk' ? 'flex' : 'none';
     appScreen.style.display = which === 'app' ? 'block' : 'none';
+    hcScreen.style.display = which === 'hc' ? 'block' : 'none';
+    hcDetailScreen.style.display = which === 'hcDetail' ? 'block' : 'none';
   }
 
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       currentUid = user.uid;
+      if (user.email === HEADCOUNSELOR_EMAIL) {
+        showScreen('hc');
+        await loadAllBunks();
+        return;
+      }
       if (!user.emailVerified) {
         verifyEmailAddr.textContent = user.email;
         showScreen('verify');
@@ -612,6 +665,81 @@
     }
   }
 
+  async function loadAllBunks() {
+    hcBunkList.innerHTML = '<div class="empty">Loading bunks...</div>';
+    try {
+      const querySnap = await getDocs(collection(db, 'userData'));
+      const bunkMap = {};
+      querySnap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (!data.bunkNumber) return;
+        const bunk = String(data.bunkNumber);
+        if (!bunkMap[bunk]) bunkMap[bunk] = [];
+        (data.campers || []).forEach(c => bunkMap[bunk].push(c));
+      });
+      lastBunkMap = bunkMap;
+      renderBunkList(bunkMap);
+    } catch (e) {
+      hcBunkList.innerHTML = '<div class="empty">Could not load bunks — check your connection.</div>';
+    }
+  }
+
+  function renderBunkList(bunkMap) {
+    const bunks = Object.keys(bunkMap).sort((a, b) => {
+      const na = parseFloat(a), nb = parseFloat(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b);
+    });
+    hcBunkList.innerHTML = '';
+    if (bunks.length === 0) {
+      hcBunkList.innerHTML = '<div class="empty">No bunks yet.</div>';
+      return;
+    }
+    bunks.forEach(bunk => {
+      const row = document.createElement('div');
+      row.className = 'camper';
+      row.style.cursor = 'pointer';
+      const n = bunkMap[bunk].length;
+      row.innerHTML = `
+        <div class="info">
+          <div class="name">Bunk ${escapeHtml(bunk)}</div>
+          <div class="count" style="color:#94a3b8;">${n} camper${n === 1 ? '' : 's'}</div>
+        </div>
+        <div style="color:#64748b;font-size:22px;">›</div>
+      `;
+      row.addEventListener('click', () => showBunkDetail(bunk));
+      hcBunkList.appendChild(row);
+    });
+  }
+
+  function showBunkDetail(bunk) {
+    const list = lastBunkMap[bunk] || [];
+    hcBunkTitle.textContent = 'Bunk ' + bunk;
+    hcDetailList.innerHTML = '';
+    if (list.length === 0) {
+      hcDetailList.innerHTML = '<div class="empty">No campers in this bunk yet.</div>';
+    } else {
+      list.forEach(c => {
+        const row = document.createElement('div');
+        row.className = 'camper';
+        row.innerHTML = `
+          <div class="info">
+            <div class="name">${escapeHtml(c.name)}</div>
+            <div class="count">${c.count} $GY</div>
+          </div>
+        `;
+        hcDetailList.appendChild(row);
+      });
+    }
+    showScreen('hcDetail');
+  }
+
+  hcRefreshBtn.addEventListener('click', loadAllBunks);
+  hcBackBtn.addEventListener('click', () => showScreen('hc'));
+  hcLogoutBtn.addEventListener('click', () => {
+    logoutOverlay.style.display = 'flex';
+  });
+
   bunkForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const bunk = bunkInput.value.trim();
@@ -652,7 +780,7 @@
     saveChain = saveChain.then(async () => {
       try {
         const ref = doc(db, 'userData', currentUid);
-        await setDoc(ref, { campers: snapshot });
+        await setDoc(ref, { campers: snapshot }, { merge: true });
         setStatus('saved');
         setTimeout(() => setStatus(trackedLabel()), 900);
       } catch (e) {
