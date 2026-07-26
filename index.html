@@ -325,7 +325,7 @@
   <header>
     <div>
       <div class="headerTitle">🏕️ $GY Counter</div>
-      <div class="subtitle">Head Counselor</div>
+      <div class="subtitle" id="hcSubtitle">Head Counselor</div>
     </div>
     <div class="headerBtns">
       <button id="hcRefreshBtn" class="btnSecondary">Refresh</button>
@@ -340,9 +340,10 @@
   <header>
     <div>
       <div class="headerTitle" id="hcBunkTitle">Bunk</div>
-      <div class="subtitle">Head Counselor</div>
+      <div class="subtitle" id="hcDetailSubtitle">Head Counselor</div>
     </div>
     <div class="headerBtns">
+      <button id="hcDeleteBunkBtn" class="btnSecondary" style="display:none;background:#7f1d1d;color:#fecaca;">Delete Bunk</button>
       <button id="hcBackBtn" class="btnSecondary">← Back</button>
     </div>
   </header>
@@ -370,6 +371,7 @@
   <div id="addOverlay" class="overlay" style="display:none;">
     <div class="modal">
       <h3>Add camper</h3>
+      <div class="authError" id="addError"></div>
       <input id="newName" placeholder="Camper name..." />
       <div class="modal-btns">
         <button id="cancelAdd" style="background:#334155;color:white;">Cancel</button>
@@ -404,6 +406,34 @@
   </div>
 </div>
 
+<!-- ADMIN: delete a specific camper -->
+<div id="adminDelCamperOverlay" class="overlay" style="display:none;">
+  <div class="modal">
+    <h3>Remove camper?</h3>
+    <p id="adminDelCamperPrompt"></p>
+    <input id="adminDelCamperInput" placeholder="Type name to confirm" autocapitalize="none" />
+    <p style="font-size:12px;color:#64748b;margin-top:-6px;">case sensitive — must match exactly.</p>
+    <div class="modal-btns">
+      <button id="adminCancelDelCamper">Cancel</button>
+      <button id="adminConfirmDelCamper" disabled>Remove</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN: delete an entire bunk -->
+<div id="deleteBunkOverlay" class="overlay" style="display:none;">
+  <div class="modal">
+    <h3>Delete this bunk?</h3>
+    <p>This clears every camper in this bunk and frees the bunk number for reuse. This can't be undone.</p>
+    <input id="deleteBunkInput" placeholder="Type bunk number to confirm" inputmode="numeric" />
+    <p style="font-size:12px;color:#64748b;margin-top:-6px;">case sensitive — must match exactly.</p>
+    <div class="modal-btns">
+      <button id="cancelDeleteBunk">Cancel</button>
+      <button id="confirmDeleteBunk" disabled style="background:#ef4444;color:white;">Delete Bunk</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
@@ -411,7 +441,7 @@
     onAuthStateChanged, signOut, sendEmailVerification, reload
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, setDoc, getDocs, collection
+    getFirestore, doc, getDoc, setDoc, getDocs, collection, query, where, deleteField
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -428,6 +458,13 @@
   const auth = getAuth(app);
   const db = getFirestore(app);
   const HEADCOUNSELOR_EMAIL = 'headcounselor@gydollars.internal';
+
+  async function isBunkTaken(bunkValue) {
+    const q = query(collection(db, 'userData'), where('bunkNumber', '==', bunkValue));
+    const snap = await getDocs(q);
+    return !snap.empty;
+  }
+  const ADMIN_EMAIL = 'admin@gydollars.internal';
 
   // ---- Elements ----
   const authScreen = document.getElementById('authScreen');
@@ -454,10 +491,29 @@
   const hcBunkList = document.getElementById('hcBunkList');
   const hcDetailList = document.getElementById('hcDetailList');
   const hcBunkTitle = document.getElementById('hcBunkTitle');
+  const hcSubtitle = document.getElementById('hcSubtitle');
+  const hcDetailSubtitle = document.getElementById('hcDetailSubtitle');
   const hcRefreshBtn = document.getElementById('hcRefreshBtn');
   const hcLogoutBtn = document.getElementById('hcLogoutBtn');
   const hcBackBtn = document.getElementById('hcBackBtn');
-  let lastBunkMap = {};
+  const hcDeleteBunkBtn = document.getElementById('hcDeleteBunkBtn');
+  let lastBunkMap = {}; // { bunkNumber: [{uid, campers}] }
+  let lastBunkOwners = {}; // { bunkNumber: Set(uid) } — tracks bunk even if it has 0 campers
+  let currentRole = null; // 'hc' | 'admin'
+  let currentDetailBunk = null;
+  const adminSaveChains = {}; // uid -> Promise chain
+  let pendingAdminDelete = null; // { ownerUid, camperId }
+
+  const adminDelCamperOverlay = document.getElementById('adminDelCamperOverlay');
+  const adminDelCamperPrompt = document.getElementById('adminDelCamperPrompt');
+  const adminDelCamperInput = document.getElementById('adminDelCamperInput');
+  const adminCancelDelCamper = document.getElementById('adminCancelDelCamper');
+  const adminConfirmDelCamper = document.getElementById('adminConfirmDelCamper');
+
+  const deleteBunkOverlay = document.getElementById('deleteBunkOverlay');
+  const deleteBunkInput = document.getElementById('deleteBunkInput');
+  const cancelDeleteBunk = document.getElementById('cancelDeleteBunk');
+  const confirmDeleteBunk = document.getElementById('confirmDeleteBunk');
 
   const verifyScreen = document.getElementById('verifyScreen');
   const verifyEmailAddr = document.getElementById('verifyEmailAddr');
@@ -471,6 +527,7 @@
   const newNameInput = document.getElementById('newName');
   const fabAdd = document.getElementById('fabAdd');
   const addOverlay = document.getElementById('addOverlay');
+  const addError = document.getElementById('addError');
   const cancelAdd = document.getElementById('cancelAdd');
   const confirmAdd = document.getElementById('confirmAdd');
   const saveBtn = document.getElementById('saveBtn');
@@ -490,10 +547,13 @@
   let currentUid = null;
 
   // ---- Auth mode toggle ----
+  function isSpecialUsername(raw) {
+    const r = raw.trim().toLowerCase();
+    return r === 'headcounselor' || r === 'admin';
+  }
   function updateBunkFieldVisibility() {
     const raw = authEmail.value.trim().toLowerCase();
-    const isHC = raw === 'headcounselor';
-    authBunk.style.display = (isSignUpMode && !isHC) ? 'block' : 'none';
+    authBunk.style.display = (isSignUpMode && !isSpecialUsername(raw)) ? 'block' : 'none';
   }
   authEmail.addEventListener('input', updateBunkFieldVisibility);
 
@@ -516,15 +576,17 @@
   authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const rawInput = authEmail.value.trim();
-    const isHC = rawInput.toLowerCase() === 'headcounselor';
-    const email = isHC ? HEADCOUNSELOR_EMAIL : rawInput;
+    const rawLower = rawInput.toLowerCase();
+    const isHC = rawLower === 'headcounselor';
+    const isAdmin = rawLower === 'admin';
+    const email = isHC ? HEADCOUNSELOR_EMAIL : (isAdmin ? ADMIN_EMAIL : rawInput);
     const password = authPassword.value;
     const bunk = authBunk.value.trim();
     if (!rawInput || !password) {
       showAuthError('Enter an email and password.');
       return;
     }
-    if (isSignUpMode && !isHC && !bunk) {
+    if (isSignUpMode && !isHC && !isAdmin && !bunk) {
       showAuthError('Enter your bunk number.');
       return;
     }
@@ -532,8 +594,16 @@
     authError.style.display = 'none';
     try {
       if (isSignUpMode) {
+        if (!isHC && !isAdmin) {
+          const taken = await isBunkTaken(bunk);
+          if (taken) {
+            showAuthError('Bunk ' + bunk + ' is already taken by another account.');
+            authSubmit.disabled = false;
+            return;
+          }
+        }
         const cred = await createUserWithEmailAndPassword(auth, email, password);
-        if (!isHC) {
+        if (!isHC && !isAdmin) {
           await sendEmailVerification(cred.user);
           const ref = doc(db, 'userData', cred.user.uid);
           await setDoc(ref, { campers: [], bunkNumber: bunk });
@@ -621,7 +691,11 @@
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       currentUid = user.uid;
-      if (user.email === HEADCOUNSELOR_EMAIL) {
+      if (user.email === HEADCOUNSELOR_EMAIL || user.email === ADMIN_EMAIL) {
+        currentRole = (user.email === ADMIN_EMAIL) ? 'admin' : 'hc';
+        hcSubtitle.textContent = currentRole === 'admin' ? 'Admin' : 'Head Counselor';
+        hcDetailSubtitle.textContent = currentRole === 'admin' ? 'Admin' : 'Head Counselor';
+        hcDeleteBunkBtn.style.display = currentRole === 'admin' ? 'inline-block' : 'none';
         showScreen('hc');
         await loadAllBunks();
         return;
@@ -637,6 +711,7 @@
     } else {
       currentUid = null;
       campers = [];
+      currentRole = null;
       bunkLine.style.display = 'none';
       showScreen('auth');
       authEmail.value = '';
@@ -676,14 +751,18 @@
     try {
       const querySnap = await getDocs(collection(db, 'userData'));
       const bunkMap = {};
+      const owners = {};
       querySnap.forEach(docSnap => {
         const data = docSnap.data();
         if (!data.bunkNumber) return;
         const bunk = String(data.bunkNumber);
         if (!bunkMap[bunk]) bunkMap[bunk] = [];
-        (data.campers || []).forEach(c => bunkMap[bunk].push(c));
+        if (!owners[bunk]) owners[bunk] = new Set();
+        owners[bunk].add(docSnap.id);
+        (data.campers || []).forEach(c => bunkMap[bunk].push({ ownerUid: docSnap.id, id: c.id, name: c.name, count: c.count }));
       });
       lastBunkMap = bunkMap;
+      lastBunkOwners = owners;
       renderBunkList(bunkMap);
     } catch (e) {
       hcBunkList.innerHTML = '<div class="empty">Could not load bunks — check your connection.</div>';
@@ -719,26 +798,152 @@
   }
 
   function showBunkDetail(bunk) {
-    const list = lastBunkMap[bunk] || [];
+    currentDetailBunk = bunk;
     hcBunkTitle.textContent = 'Bunk ' + bunk;
+    renderBunkDetailRows();
+    showScreen('hcDetail');
+  }
+
+  function renderBunkDetailRows() {
+    const list = lastBunkMap[currentDetailBunk] || [];
     hcDetailList.innerHTML = '';
     if (list.length === 0) {
       hcDetailList.innerHTML = '<div class="empty">No campers in this bunk yet.</div>';
-    } else {
-      list.forEach(c => {
-        const row = document.createElement('div');
-        row.className = 'camper';
+      return;
+    }
+    list.forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'camper';
+      if (currentRole === 'admin') {
+        row.innerHTML = `
+          <div class="info">
+            <div class="name">${escapeHtml(c.name)}</div>
+            <div class="count">${c.count} $GY</div>
+          </div>
+          <div class="btns">
+            <button class="step minus" data-owner="${c.ownerUid}" data-id="${c.id}" data-action="minus">−</button>
+            <button class="step plus" data-owner="${c.ownerUid}" data-id="${c.id}" data-action="plus">+</button>
+            <button class="del" data-owner="${c.ownerUid}" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-action="del">✕</button>
+          </div>
+        `;
+      } else {
         row.innerHTML = `
           <div class="info">
             <div class="name">${escapeHtml(c.name)}</div>
             <div class="count">${c.count} $GY</div>
           </div>
         `;
-        hcDetailList.appendChild(row);
-      });
-    }
-    showScreen('hcDetail');
+      }
+      hcDetailList.appendChild(row);
+    });
   }
+
+  function chainAdminWrite(ownerUid, workFn) {
+    const prev = adminSaveChains[ownerUid] || Promise.resolve();
+    const next = prev.then(workFn).catch(() => {});
+    adminSaveChains[ownerUid] = next;
+    return next;
+  }
+
+  function adminAdjustCount(ownerUid, camperId, delta, bunk) {
+    return chainAdminWrite(ownerUid, async () => {
+      const ref = doc(db, 'userData', ownerUid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return;
+      const data = snap.data();
+      const list = data.campers || [];
+      const c = list.find(x => x.id === camperId);
+      if (!c) return;
+      c.count = Math.max(0, c.count + delta);
+      await setDoc(ref, { campers: list }, { merge: true });
+      const entry = (lastBunkMap[bunk] || []).find(e => e.ownerUid === ownerUid && e.id === camperId);
+      if (entry) entry.count = c.count;
+      if (currentDetailBunk === bunk) renderBunkDetailRows();
+    });
+  }
+
+  function adminDeleteCamper(ownerUid, camperId, bunk) {
+    return chainAdminWrite(ownerUid, async () => {
+      const ref = doc(db, 'userData', ownerUid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return;
+      const data = snap.data();
+      const list = (data.campers || []).filter(x => x.id !== camperId);
+      await setDoc(ref, { campers: list }, { merge: true });
+      lastBunkMap[bunk] = (lastBunkMap[bunk] || []).filter(
+        e => !(e.ownerUid === ownerUid && e.id === camperId)
+      );
+      if (currentDetailBunk === bunk) renderBunkDetailRows();
+    });
+  }
+
+  hcDetailList.addEventListener('click', (e) => {
+    if (currentRole !== 'admin') return;
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const ownerUid = btn.dataset.owner;
+    const camperId = btn.dataset.id;
+    const action = btn.dataset.action;
+    const bunkAtClick = currentDetailBunk;
+    if (action === 'plus') adminAdjustCount(ownerUid, camperId, 1, bunkAtClick);
+    else if (action === 'minus') adminAdjustCount(ownerUid, camperId, -1, bunkAtClick);
+    else if (action === 'del') {
+      pendingAdminDelete = { ownerUid, camperId, bunk: bunkAtClick };
+      adminDelCamperPrompt.innerHTML = `Type <strong>${escapeHtml(btn.dataset.name)}</strong> exactly to remove them.`;
+      adminDelCamperInput.value = '';
+      adminConfirmDelCamper.disabled = true;
+      adminDelCamperOverlay.style.display = 'flex';
+      setTimeout(() => adminDelCamperInput.focus(), 50);
+    }
+  });
+
+  adminDelCamperInput.addEventListener('input', () => {
+    const list = lastBunkMap[currentDetailBunk] || [];
+    const entry = pendingAdminDelete && list.find(e => e.ownerUid === pendingAdminDelete.ownerUid && e.id === pendingAdminDelete.camperId);
+    adminConfirmDelCamper.disabled = !entry || adminDelCamperInput.value.trim() !== entry.name;
+  });
+  adminDelCamperInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !adminConfirmDelCamper.disabled) adminConfirmDelCamper.click();
+  });
+  adminCancelDelCamper.addEventListener('click', () => {
+    adminDelCamperOverlay.style.display = 'none';
+    pendingAdminDelete = null;
+  });
+  adminConfirmDelCamper.addEventListener('click', () => {
+    if (!pendingAdminDelete) return;
+    adminDeleteCamper(pendingAdminDelete.ownerUid, pendingAdminDelete.camperId, pendingAdminDelete.bunk);
+    adminDelCamperOverlay.style.display = 'none';
+    pendingAdminDelete = null;
+  });
+
+  hcDeleteBunkBtn.addEventListener('click', () => {
+    deleteBunkInput.value = '';
+    confirmDeleteBunk.disabled = true;
+    deleteBunkOverlay.style.display = 'flex';
+    setTimeout(() => deleteBunkInput.focus(), 50);
+  });
+  deleteBunkInput.addEventListener('input', () => {
+    confirmDeleteBunk.disabled = deleteBunkInput.value.trim() !== currentDetailBunk;
+  });
+  deleteBunkInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !confirmDeleteBunk.disabled) confirmDeleteBunk.click();
+  });
+  cancelDeleteBunk.addEventListener('click', () => {
+    deleteBunkOverlay.style.display = 'none';
+  });
+  confirmDeleteBunk.addEventListener('click', async () => {
+    if (deleteBunkInput.value.trim() !== currentDetailBunk) return;
+    const bunk = currentDetailBunk;
+    confirmDeleteBunk.disabled = true;
+    const owners = lastBunkOwners[bunk] || new Set();
+    for (const uid of owners) {
+      const ref = doc(db, 'userData', uid);
+      await setDoc(ref, { campers: [], bunkNumber: deleteField() }, { merge: true });
+    }
+    deleteBunkOverlay.style.display = 'none';
+    showScreen('hc');
+    await loadAllBunks();
+  });
 
   hcRefreshBtn.addEventListener('click', loadAllBunks);
   hcBackBtn.addEventListener('click', () => showScreen('hc'));
@@ -755,7 +960,15 @@
       return;
     }
     bunkSubmit.disabled = true;
+    bunkError.style.display = 'none';
     try {
+      const taken = await isBunkTaken(bunk);
+      if (taken) {
+        bunkError.style.display = 'block';
+        bunkError.textContent = 'Bunk ' + bunk + ' is already taken by another account.';
+        bunkSubmit.disabled = false;
+        return;
+      }
       const ref = doc(db, 'userData', currentUid);
       await setDoc(ref, { bunkNumber: bunk }, { merge: true });
       bunkLine.textContent = 'Bunk ' + bunk;
@@ -887,6 +1100,7 @@
 
   function openAddModal() {
     newNameInput.value = '';
+    addError.style.display = 'none';
     addOverlay.style.display = 'flex';
     setTimeout(() => newNameInput.focus(), 50);
   }
@@ -898,6 +1112,12 @@
   function addCamper() {
     const name = newNameInput.value.trim();
     if (!name) return;
+    const dup = campers.some(c => c.name.toLowerCase() === name.toLowerCase());
+    if (dup) {
+      addError.textContent = 'A camper with that name already exists.';
+      addError.style.display = 'block';
+      return;
+    }
     campers.push({ id: makeId(), name, count: 0 });
     render();
     saveCampers();
@@ -907,17 +1127,20 @@
   fabAdd.addEventListener('click', openAddModal);
   cancelAdd.addEventListener('click', closeAddModal);
   confirmAdd.addEventListener('click', addCamper);
+  newNameInput.addEventListener('input', () => { addError.style.display = 'none'; });
   newNameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') addCamper();
   });
 
   // Tap outside any modal's content area closes/cancels it
-  [delOverlay, logoutOverlay, addOverlay].forEach(overlay => {
+  [delOverlay, logoutOverlay, addOverlay, adminDelCamperOverlay, deleteBunkOverlay].forEach(overlay => {
     overlay.addEventListener('click', (e) => {
       if (e.target !== overlay) return;
       if (overlay === delOverlay) closeDeleteModal();
       else if (overlay === logoutOverlay) logoutOverlay.style.display = 'none';
       else if (overlay === addOverlay) closeAddModal();
+      else if (overlay === adminDelCamperOverlay) { adminDelCamperOverlay.style.display = 'none'; pendingAdminDelete = null; }
+      else if (overlay === deleteBunkOverlay) deleteBunkOverlay.style.display = 'none';
     });
   });
 </script>
