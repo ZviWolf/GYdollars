@@ -41,7 +41,7 @@
     align-items: center;
     gap: 6px;
   }
-  #saveBtn {
+  #saveBtn, #hcSaveBtn {
     flex-shrink: 0;
     background: #22c55e;
     border: none;
@@ -96,6 +96,19 @@
   .info {
     flex: 1;
     min-width: 0;
+  }
+  .amountCircle {
+    flex-shrink: 0;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: #22c55e;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
   }
   .name {
     font-size: 17px;
@@ -196,10 +209,26 @@
     font-size: 15px;
     font-weight: 700;
   }
-  #cancelDel { background: #334155; color: white; }
-  #confirmDel { background: #ef4444; color: white; }
-  #confirmDel:disabled { background: #7f1d1d; opacity: 0.5; }
-  #cancelLogout { background: #334155; color: white; }
+  .modalCancelBtn { background: #334155; color: white; }
+  .modalPrimaryBtn { background: #3b82f6; color: white; }
+  .modalDangerBtn { background: #ef4444; color: white; }
+  .modalDangerBtn:disabled { background: #7f1d1d; opacity: 0.5; }
+
+  .amountGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .amountBtn {
+    padding: 16px;
+    border-radius: 10px;
+    border: none;
+    background: #3b82f6;
+    color: white;
+    font-size: 18px;
+    font-weight: 700;
+  }
 
   /* Auth screen */
   #authScreen {
@@ -288,6 +317,9 @@
     <div class="switchMode">
       <span id="switchText">No account?</span> <a href="#" id="switchLink">Sign up</a>
     </div>
+    <div class="switchMode">
+      <a href="#" id="forgotPasswordLink">Forgot password?</a>
+    </div>
   </div>
 </div>
 
@@ -341,8 +373,10 @@
     <div>
       <div class="headerTitle" id="hcBunkTitle">Bunk</div>
       <div class="subtitle" id="hcDetailSubtitle">Head Counselor</div>
+      <div class="subtitle" id="hcDetailStatus" style="display:none;"></div>
     </div>
     <div class="headerBtns">
+      <button id="hcSaveBtn" style="display:none;">Save</button>
       <button id="hcDeleteBunkBtn" class="btnSecondary" style="display:none;background:#7f1d1d;color:#fecaca;">Delete Bunk</button>
       <button id="hcBackBtn" class="btnSecondary">← Back</button>
     </div>
@@ -374,8 +408,8 @@
       <div class="authError" id="addError"></div>
       <input id="newName" placeholder="Camper name..." />
       <div class="modal-btns">
-        <button id="cancelAdd" style="background:#334155;color:white;">Cancel</button>
-        <button id="confirmAdd" style="background:#3b82f6;color:white;">Add</button>
+        <button id="cancelAdd" class="modalCancelBtn">Cancel</button>
+        <button id="confirmAdd" class="modalPrimaryBtn">Add</button>
       </div>
     </div>
   </div>
@@ -387,8 +421,8 @@
       <input id="delInput" placeholder="Type name to confirm" autocapitalize="none" />
       <p style="font-size:12px;color:#64748b;margin-top:-6px;">case sensitive — must match exactly.</p>
       <div class="modal-btns">
-        <button id="cancelDel">Cancel</button>
-        <button id="confirmDel" disabled>Remove</button>
+        <button id="cancelDel" class="modalCancelBtn">Cancel</button>
+        <button id="confirmDel" class="modalDangerBtn" disabled>Remove</button>
       </div>
     </div>
   </div>
@@ -400,8 +434,8 @@
     <h3>Log out?</h3>
     <p>You'll need to log back in to see your camper list.</p>
     <div class="modal-btns">
-      <button id="cancelLogout">Cancel</button>
-      <button id="confirmLogout" style="background:#ef4444;color:white;">Log out</button>
+      <button id="cancelLogout" class="modalCancelBtn">Cancel</button>
+      <button id="confirmLogout" class="modalDangerBtn">Log out</button>
     </div>
   </div>
 </div>
@@ -414,8 +448,8 @@
     <input id="adminDelCamperInput" placeholder="Type name to confirm" autocapitalize="none" />
     <p style="font-size:12px;color:#64748b;margin-top:-6px;">case sensitive — must match exactly.</p>
     <div class="modal-btns">
-      <button id="adminCancelDelCamper">Cancel</button>
-      <button id="adminConfirmDelCamper" disabled>Remove</button>
+      <button id="adminCancelDelCamper" class="modalCancelBtn">Cancel</button>
+      <button id="adminConfirmDelCamper" class="modalDangerBtn" disabled>Remove</button>
     </div>
   </div>
 </div>
@@ -426,10 +460,39 @@
     <h3>Delete this bunk?</h3>
     <p>This clears every camper in this bunk and frees the bunk number for reuse. This can't be undone.</p>
     <input id="deleteBunkInput" placeholder="Type bunk number to confirm" inputmode="numeric" />
-    <p style="font-size:12px;color:#64748b;margin-top:-6px;">case sensitive — must match exactly.</p>
     <div class="modal-btns">
-      <button id="cancelDeleteBunk">Cancel</button>
-      <button id="confirmDeleteBunk" disabled style="background:#ef4444;color:white;">Delete Bunk</button>
+      <button id="cancelDeleteBunk" class="modalCancelBtn">Cancel</button>
+      <button id="confirmDeleteBunk" class="modalDangerBtn" disabled>Delete Bunk</button>
+    </div>
+  </div>
+</div>
+
+<!-- Amount picker (used for both regular and admin +/-) -->
+<div id="amountOverlay" class="overlay" style="display:none;">
+  <div class="modal">
+    <h3 id="amountTitle">Add $GY</h3>
+    <div class="amountGrid">
+      <button class="amountBtn" data-amt="1">1</button>
+      <button class="amountBtn" data-amt="5">5</button>
+      <button class="amountBtn" data-amt="10">10</button>
+      <button class="amountBtn" data-amt="20">20</button>
+    </div>
+    <div class="modal-btns">
+      <button id="cancelAmount" class="modalCancelBtn" style="flex:1;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Forgot password -->
+<div id="forgotOverlay" class="overlay" style="display:none;">
+  <div class="modal">
+    <h3>Reset password</h3>
+    <p>Enter your email and we'll send you a link to reset your password.</p>
+    <div class="authError" id="forgotError"></div>
+    <input id="forgotEmail" type="email" placeholder="Email" autocapitalize="none" />
+    <div class="modal-btns">
+      <button id="cancelForgot" class="modalCancelBtn">Cancel</button>
+      <button id="confirmForgot" class="modalPrimaryBtn">Send link</button>
     </div>
   </div>
 </div>
@@ -438,7 +501,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
     getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-    onAuthStateChanged, signOut, sendEmailVerification, reload
+    onAuthStateChanged, signOut, sendEmailVerification, reload, sendPasswordResetEmail
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
     getFirestore, doc, getDoc, setDoc, getDocs, collection, query, where, deleteField
@@ -497,6 +560,8 @@
   const hcLogoutBtn = document.getElementById('hcLogoutBtn');
   const hcBackBtn = document.getElementById('hcBackBtn');
   const hcDeleteBunkBtn = document.getElementById('hcDeleteBunkBtn');
+  const hcSaveBtn = document.getElementById('hcSaveBtn');
+  const hcDetailStatus = document.getElementById('hcDetailStatus');
   let lastBunkMap = {}; // { bunkNumber: [{uid, campers}] }
   let lastBunkOwners = {}; // { bunkNumber: Set(uid) } — tracks bunk even if it has 0 campers
   let currentRole = null; // 'hc' | 'admin'
@@ -514,6 +579,19 @@
   const deleteBunkInput = document.getElementById('deleteBunkInput');
   const cancelDeleteBunk = document.getElementById('cancelDeleteBunk');
   const confirmDeleteBunk = document.getElementById('confirmDeleteBunk');
+
+  const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+  const forgotOverlay = document.getElementById('forgotOverlay');
+  const forgotEmail = document.getElementById('forgotEmail');
+  const forgotError = document.getElementById('forgotError');
+  const cancelForgot = document.getElementById('cancelForgot');
+  const confirmForgot = document.getElementById('confirmForgot');
+
+  const amountOverlay = document.getElementById('amountOverlay');
+  const amountTitle = document.getElementById('amountTitle');
+  const cancelAmount = document.getElementById('cancelAmount');
+  const amountBtns = document.querySelectorAll('.amountBtn');
+  let pendingAmount = null; // { context: 'regular'|'admin', id, ownerUid?, bunk?, sign }
 
   const verifyScreen = document.getElementById('verifyScreen');
   const verifyEmailAddr = document.getElementById('verifyEmailAddr');
@@ -617,6 +695,52 @@
     authSubmit.disabled = false;
   });
 
+  forgotPasswordLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    const raw = authEmail.value.trim();
+    forgotEmail.value = isSpecialUsername(raw) ? '' : raw;
+    forgotError.style.display = 'none';
+    forgotOverlay.style.display = 'flex';
+    setTimeout(() => forgotEmail.focus(), 50);
+  });
+
+  cancelForgot.addEventListener('click', () => {
+    forgotOverlay.style.display = 'none';
+  });
+
+  confirmForgot.addEventListener('click', async () => {
+    const email = forgotEmail.value.trim();
+    if (!email) {
+      forgotError.style.background = '#7f1d1d';
+      forgotError.style.color = '#fecaca';
+      forgotError.textContent = 'Enter your email.';
+      forgotError.style.display = 'block';
+      return;
+    }
+    if (isSpecialUsername(email)) {
+      forgotError.style.background = '#7f1d1d';
+      forgotError.style.color = '#fecaca';
+      forgotError.textContent = "This account type doesn't use a real inbox — contact whoever manages this app instead.";
+      forgotError.style.display = 'block';
+      return;
+    }
+    confirmForgot.disabled = true;
+    forgotError.style.display = 'none';
+    try {
+      await sendPasswordResetEmail(auth, email);
+      forgotError.style.background = '#14532d';
+      forgotError.style.color = '#bbf7d0';
+      forgotError.textContent = 'Reset link sent — check your inbox (and spam folder).';
+      forgotError.style.display = 'block';
+    } catch (err) {
+      forgotError.style.background = '#7f1d1d';
+      forgotError.style.color = '#fecaca';
+      forgotError.textContent = friendlyAuthError(err.code);
+      forgotError.style.display = 'block';
+    }
+    confirmForgot.disabled = false;
+  });
+
   function friendlyAuthError(code) {
     switch (code) {
       case 'auth/email-already-in-use': return 'That email already has an account. Try logging in.';
@@ -696,6 +820,7 @@
         hcSubtitle.textContent = currentRole === 'admin' ? 'Admin' : 'Head Counselor';
         hcDetailSubtitle.textContent = currentRole === 'admin' ? 'Admin' : 'Head Counselor';
         hcDeleteBunkBtn.style.display = currentRole === 'admin' ? 'inline-block' : 'none';
+        hcSaveBtn.style.display = currentRole === 'admin' ? 'inline-block' : 'none';
         showScreen('hc');
         await loadAllBunks();
         return;
@@ -816,9 +941,9 @@
       row.className = 'camper';
       if (currentRole === 'admin') {
         row.innerHTML = `
+          <div class="amountCircle">$${c.count}</div>
           <div class="info">
             <div class="name">${escapeHtml(c.name)}</div>
-            <div class="count">${c.count} $GY</div>
           </div>
           <div class="btns">
             <button class="step minus" data-owner="${c.ownerUid}" data-id="${c.id}" data-action="minus">−</button>
@@ -828,9 +953,9 @@
         `;
       } else {
         row.innerHTML = `
+          <div class="amountCircle">$${c.count}</div>
           <div class="info">
             <div class="name">${escapeHtml(c.name)}</div>
-            <div class="count">${c.count} $GY</div>
           </div>
         `;
       }
@@ -843,6 +968,12 @@
     const next = prev.then(workFn).catch(() => {});
     adminSaveChains[ownerUid] = next;
     return next;
+  }
+
+  function showHcSaved() {
+    hcDetailStatus.textContent = 'saved';
+    hcDetailStatus.style.display = 'block';
+    setTimeout(() => { hcDetailStatus.style.display = 'none'; }, 900);
   }
 
   function adminAdjustCount(ownerUid, camperId, delta, bunk) {
@@ -858,7 +989,10 @@
       await setDoc(ref, { campers: list }, { merge: true });
       const entry = (lastBunkMap[bunk] || []).find(e => e.ownerUid === ownerUid && e.id === camperId);
       if (entry) entry.count = c.count;
-      if (currentDetailBunk === bunk) renderBunkDetailRows();
+      if (currentDetailBunk === bunk) {
+        renderBunkDetailRows();
+        showHcSaved();
+      }
     });
   }
 
@@ -873,9 +1007,14 @@
       lastBunkMap[bunk] = (lastBunkMap[bunk] || []).filter(
         e => !(e.ownerUid === ownerUid && e.id === camperId)
       );
-      if (currentDetailBunk === bunk) renderBunkDetailRows();
+      if (currentDetailBunk === bunk) {
+        renderBunkDetailRows();
+        showHcSaved();
+      }
     });
   }
+
+  hcSaveBtn.addEventListener('click', showHcSaved);
 
   hcDetailList.addEventListener('click', (e) => {
     if (currentRole !== 'admin') return;
@@ -885,9 +1024,12 @@
     const camperId = btn.dataset.id;
     const action = btn.dataset.action;
     const bunkAtClick = currentDetailBunk;
-    if (action === 'plus') adminAdjustCount(ownerUid, camperId, 1, bunkAtClick);
-    else if (action === 'minus') adminAdjustCount(ownerUid, camperId, -1, bunkAtClick);
-    else if (action === 'del') {
+    if (action === 'plus' || action === 'minus') {
+      const entry = (lastBunkMap[bunkAtClick] || []).find(x => x.ownerUid === ownerUid && x.id === camperId);
+      pendingAmount = { context: 'admin', ownerUid, id: camperId, bunk: bunkAtClick, sign: action === 'plus' ? 1 : -1 };
+      amountTitle.textContent = (action === 'plus' ? 'Add to ' : 'Subtract from ') + (entry ? entry.name : 'camper');
+      amountOverlay.style.display = 'flex';
+    } else if (action === 'del') {
       pendingAdminDelete = { ownerUid, camperId, bunk: bunkAtClick };
       adminDelCamperPrompt.innerHTML = `Type <strong>${escapeHtml(btn.dataset.name)}</strong> exactly to remove them.`;
       adminDelCamperInput.value = '';
@@ -1019,9 +1161,9 @@
       const row = document.createElement('div');
       row.className = 'camper';
       row.innerHTML = `
+        <div class="amountCircle">$${c.count}</div>
         <div class="info">
           <div class="name">${escapeHtml(c.name)}</div>
-          <div class="count">${c.count} $GY</div>
         </div>
         <div class="btns">
           <button class="step minus" data-id="${c.id}" data-action="minus">−</button>
@@ -1047,14 +1189,10 @@
     const camper = campers.find(c => c.id === id);
     if (!camper) return;
 
-    if (action === 'plus') {
-      camper.count++;
-      render();
-      saveCampers();
-    } else if (action === 'minus') {
-      if (camper.count > 0) camper.count--;
-      render();
-      saveCampers();
+    if (action === 'plus' || action === 'minus') {
+      pendingAmount = { context: 'regular', id, sign: action === 'plus' ? 1 : -1 };
+      amountTitle.textContent = (action === 'plus' ? 'Add to ' : 'Subtract from ') + camper.name;
+      amountOverlay.style.display = 'flex';
     } else if (action === 'del') {
       openDeleteModal(camper);
     }
@@ -1124,6 +1262,30 @@
     closeAddModal();
   }
 
+  cancelAmount.addEventListener('click', () => {
+    amountOverlay.style.display = 'none';
+    pendingAmount = null;
+  });
+
+  amountBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!pendingAmount) return;
+      const delta = pendingAmount.sign * parseInt(btn.dataset.amt, 10);
+      if (pendingAmount.context === 'regular') {
+        const camper = campers.find(c => c.id === pendingAmount.id);
+        if (camper) {
+          camper.count = Math.max(0, camper.count + delta);
+          render();
+          saveCampers();
+        }
+      } else if (pendingAmount.context === 'admin') {
+        adminAdjustCount(pendingAmount.ownerUid, pendingAmount.id, delta, pendingAmount.bunk);
+      }
+      amountOverlay.style.display = 'none';
+      pendingAmount = null;
+    });
+  });
+
   fabAdd.addEventListener('click', openAddModal);
   cancelAdd.addEventListener('click', closeAddModal);
   confirmAdd.addEventListener('click', addCamper);
@@ -1133,7 +1295,7 @@
   });
 
   // Tap outside any modal's content area closes/cancels it
-  [delOverlay, logoutOverlay, addOverlay, adminDelCamperOverlay, deleteBunkOverlay].forEach(overlay => {
+  [delOverlay, logoutOverlay, addOverlay, adminDelCamperOverlay, deleteBunkOverlay, forgotOverlay, amountOverlay].forEach(overlay => {
     overlay.addEventListener('click', (e) => {
       if (e.target !== overlay) return;
       if (overlay === delOverlay) closeDeleteModal();
@@ -1141,6 +1303,8 @@
       else if (overlay === addOverlay) closeAddModal();
       else if (overlay === adminDelCamperOverlay) { adminDelCamperOverlay.style.display = 'none'; pendingAdminDelete = null; }
       else if (overlay === deleteBunkOverlay) deleteBunkOverlay.style.display = 'none';
+      else if (overlay === forgotOverlay) forgotOverlay.style.display = 'none';
+      else if (overlay === amountOverlay) { amountOverlay.style.display = 'none'; pendingAmount = null; }
     });
   });
 </script>
