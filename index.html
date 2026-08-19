@@ -3,7 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f172a">
 <title>$GY Counter</title>
+<!-- Warm the TLS handshakes and start fetching the Firebase modules while the
+     CSS below is still parsing, instead of after the module script is reached. -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js">
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
@@ -149,6 +158,7 @@
     font-size: 18px;
     padding: 4px 8px;
   }
+  .bunkRow { cursor: pointer; }
   .empty {
     text-align: center;
     color: #64748b;
@@ -590,7 +600,7 @@
   const amountOverlay = document.getElementById('amountOverlay');
   const amountTitle = document.getElementById('amountTitle');
   const cancelAmount = document.getElementById('cancelAmount');
-  const amountBtns = document.querySelectorAll('.amountBtn');
+  const amountGrid = amountOverlay.querySelector('.amountGrid');
   let pendingAmount = null; // { context: 'regular'|'admin', id, ownerUid?, bunk?, sign }
 
   const verifyScreen = document.getElementById('verifyScreen');
@@ -757,13 +767,14 @@
     logoutOverlay.style.display = 'flex';
   });
   saveBtn.addEventListener('click', () => {
-    saveCampers();
+    saveNow();
   });
   cancelLogout.addEventListener('click', () => {
     logoutOverlay.style.display = 'none';
   });
-  confirmLogout.addEventListener('click', () => {
+  confirmLogout.addEventListener('click', async () => {
     logoutOverlay.style.display = 'none';
+    try { await flushPendingWrites(); } catch (e) { /* sign out regardless */ }
     signOut(auth);
   });
   verifyLogoutLink.addEventListener('click', (e) => { e.preventDefault(); signOut(auth); });
@@ -834,6 +845,8 @@
       render();
       await checkBunkThenEnter();
     } else {
+      discardPendingSave();
+      Object.keys(adminPending).forEach(dropPendingAdmin);
       currentUid = null;
       campers = [];
       currentRole = null;
@@ -895,32 +908,35 @@
   }
 
   function renderBunkList(bunkMap) {
-    const bunks = Object.keys(bunkMap).sort((a, b) => {
-      const na = parseFloat(a), nb = parseFloat(b);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
-      return a.localeCompare(b);
-    });
-    hcBunkList.innerHTML = '';
+    // Parse each bunk number once up front rather than twice per comparison.
+    const bunks = Object.keys(bunkMap)
+      .map(b => ({ b, n: parseFloat(b) }))
+      .sort((x, y) => {
+        if (!isNaN(x.n) && !isNaN(y.n)) return x.n - y.n;
+        return x.b.localeCompare(y.b);
+      })
+      .map(x => x.b);
     if (bunks.length === 0) {
       hcBunkList.innerHTML = '<div class="empty">No bunks yet.</div>';
       return;
     }
-    bunks.forEach(bunk => {
-      const row = document.createElement('div');
-      row.className = 'camper';
-      row.style.cursor = 'pointer';
+    hcBunkList.innerHTML = bunks.map(bunk => {
       const n = bunkMap[bunk].length;
-      row.innerHTML = `
-        <div class="info">
-          <div class="name">Bunk ${escapeHtml(bunk)}</div>
-          <div class="count" style="color:#94a3b8;">${n} camper${n === 1 ? '' : 's'}</div>
-        </div>
-        <div style="color:#64748b;font-size:22px;">›</div>
-      `;
-      row.addEventListener('click', () => showBunkDetail(bunk));
-      hcBunkList.appendChild(row);
-    });
+      return `<div class="camper bunkRow" data-bunk="${escapeHtml(bunk)}">
+          <div class="info">
+            <div class="name">Bunk ${escapeHtml(bunk)}</div>
+            <div class="count" style="color:#94a3b8;">${n} camper${n === 1 ? '' : 's'}</div>
+          </div>
+          <div style="color:#64748b;font-size:22px;">›</div>
+        </div>`;
+    }).join('');
   }
+
+  // One delegated listener for the whole list, instead of one per bunk row.
+  hcBunkList.addEventListener('click', (e) => {
+    const row = e.target.closest('.bunkRow');
+    if (row) showBunkDetail(row.dataset.bunk);
+  });
 
   function showBunkDetail(bunk) {
     currentDetailBunk = bunk;
@@ -929,38 +945,46 @@
     showScreen('hcDetail');
   }
 
+  // Same one-string build + row index as the camper list above. The camper name
+  // no longer rides along in a data-name attribute; the click handler reads it
+  // from lastBunkMap, which it already consults for the +/- title.
+  let hcRowIndex = new Map();
+  const hcRowKey = (ownerUid, id) => ownerUid + '\u0000' + id;
+
+  function hcEntry(bunk, ownerUid, id) {
+    return (lastBunkMap[bunk] || []).find(e => e.ownerUid === ownerUid && e.id === id);
+  }
+
   function renderBunkDetailRows() {
     const list = lastBunkMap[currentDetailBunk] || [];
-    hcDetailList.innerHTML = '';
+    hcRowIndex = new Map();
     if (list.length === 0) {
       hcDetailList.innerHTML = '<div class="empty">No campers in this bunk yet.</div>';
       return;
     }
-    list.forEach(c => {
-      const row = document.createElement('div');
-      row.className = 'camper';
-      if (currentRole === 'admin') {
-        row.innerHTML = `
-          <div class="amountCircle">$${c.count}</div>
-          <div class="info">
-            <div class="name">${escapeHtml(c.name)}</div>
-          </div>
+    const isAdmin = currentRole === 'admin';
+    hcDetailList.innerHTML = list.map(c => {
+      const owner = escapeHtml(c.ownerUid), id = escapeHtml(c.id);
+      const controls = isAdmin ? `
           <div class="btns">
-            <button class="step minus" data-owner="${c.ownerUid}" data-id="${c.id}" data-action="minus">−</button>
-            <button class="step plus" data-owner="${c.ownerUid}" data-id="${c.id}" data-action="plus">+</button>
-            <button class="del" data-owner="${c.ownerUid}" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-action="del">✕</button>
-          </div>
-        `;
-      } else {
-        row.innerHTML = `
+            <button class="step minus" data-owner="${owner}" data-id="${id}" data-action="minus">−</button>
+            <button class="step plus" data-owner="${owner}" data-id="${id}" data-action="plus">+</button>
+            <button class="del" data-owner="${owner}" data-id="${id}" data-action="del">✕</button>
+          </div>` : '';
+      return `<div class="camper">
           <div class="amountCircle">$${c.count}</div>
           <div class="info">
             <div class="name">${escapeHtml(c.name)}</div>
-          </div>
-        `;
-      }
-      hcDetailList.appendChild(row);
-    });
+          </div>${controls}
+        </div>`;
+    }).join('');
+    const rows = hcDetailList.children;
+    for (let i = 0; i < list.length; i++) hcRowIndex.set(hcRowKey(list[i].ownerUid, list[i].id), rows[i]);
+  }
+
+  function patchHcCount(ownerUid, id, count) {
+    const row = hcRowIndex.get(hcRowKey(ownerUid, id));
+    if (row) row.firstElementChild.textContent = '$' + count;
   }
 
   function chainAdminWrite(ownerUid, workFn) {
@@ -970,33 +994,89 @@
     return next;
   }
 
+  let hcSavedTimer = null;
   function showHcSaved() {
     hcDetailStatus.textContent = 'saved';
     hcDetailStatus.style.display = 'block';
-    setTimeout(() => { hcDetailStatus.style.display = 'none'; }, 900);
+    clearTimeout(hcSavedTimer);
+    hcSavedTimer = setTimeout(() => { hcDetailStatus.style.display = 'none'; }, 900);
   }
 
+  // Each +/- tap used to cost a full read-modify-write and made the row wait on
+  // the network before it changed. The row now updates immediately and the
+  // deltas for one bunk owner are folded into a single read-modify-write.
+  const ADMIN_FLUSH_MS = 700;
+  const adminPending = {}; // uid -> { deltas: Map(camperId -> delta), bunk, timer }
+
   function adminAdjustCount(ownerUid, camperId, delta, bunk) {
+    const entry = hcEntry(bunk, ownerUid, camperId);
+    if (!entry) return;
+    const before = entry.count;
+    entry.count = Math.max(0, before + delta);
+    // Record the delta that actually landed after clamping, so replaying the
+    // sum against the stored count gives the same answer the screen shows.
+    const applied = entry.count - before;
+    if (currentDetailBunk === bunk) patchHcCount(ownerUid, camperId, entry.count);
+    if (applied === 0) return;
+
+    const pending = adminPending[ownerUid] ||
+      (adminPending[ownerUid] = { deltas: new Map(), bunk, timer: null });
+    pending.bunk = bunk;
+    pending.deltas.set(camperId, (pending.deltas.get(camperId) || 0) + applied);
+    clearTimeout(pending.timer);
+    pending.timer = setTimeout(() => flushAdmin(ownerUid), ADMIN_FLUSH_MS);
+  }
+
+  function dropPendingAdmin(ownerUid) {
+    const pending = adminPending[ownerUid];
+    if (pending) clearTimeout(pending.timer);
+    delete adminPending[ownerUid];
+  }
+
+  function flushAdmin(ownerUid) {
+    const pending = adminPending[ownerUid];
+    if (!pending || pending.deltas.size === 0) {
+      dropPendingAdmin(ownerUid);
+      return Promise.resolve();
+    }
+    dropPendingAdmin(ownerUid);
+    const { deltas, bunk } = pending;
     return chainAdminWrite(ownerUid, async () => {
       const ref = doc(db, 'userData', ownerUid);
       const snap = await getDoc(ref);
       if (!snap.exists()) return;
-      const data = snap.data();
-      const list = data.campers || [];
-      const c = list.find(x => x.id === camperId);
-      if (!c) return;
-      c.count = Math.max(0, c.count + delta);
+      const list = snap.data().campers || [];
+      let touched = false;
+      list.forEach(c => {
+        const d = deltas.get(c.id);
+        if (d === undefined) return;
+        c.count = Math.max(0, c.count + d);
+        touched = true;
+      });
+      if (!touched) return;
       await setDoc(ref, { campers: list }, { merge: true });
-      const entry = (lastBunkMap[bunk] || []).find(e => e.ownerUid === ownerUid && e.id === camperId);
-      if (entry) entry.count = c.count;
-      if (currentDetailBunk === bunk) {
-        renderBunkDetailRows();
-        showHcSaved();
-      }
+      // Re-sync the cache with what actually landed, in case another device
+      // moved the same counts while our edits were pending.
+      const stored = new Map(list.map(c => [c.id, c.count]));
+      (lastBunkMap[bunk] || []).forEach(e => {
+        if (e.ownerUid !== ownerUid) return;
+        const v = stored.get(e.id);
+        if (v === undefined || v === e.count) return;
+        e.count = v;
+        if (currentDetailBunk === bunk) patchHcCount(ownerUid, e.id, v);
+      });
+      showHcSaved();
     });
   }
 
+  function flushAllAdmin() {
+    return Promise.all(Object.keys(adminPending).map(flushAdmin));
+  }
+
   function adminDeleteCamper(ownerUid, camperId, bunk) {
+    const pending = adminPending[ownerUid];
+    if (pending) pending.deltas.delete(camperId); // no point adjusting a count we're removing
+    flushAdmin(ownerUid); // shares the per-owner chain, so it lands before the delete
     return chainAdminWrite(ownerUid, async () => {
       const ref = doc(db, 'userData', ownerUid);
       const snap = await getDoc(ref);
@@ -1014,7 +1094,10 @@
     });
   }
 
-  hcSaveBtn.addEventListener('click', showHcSaved);
+  hcSaveBtn.addEventListener('click', () => {
+    flushAllAdmin();
+    showHcSaved();
+  });
 
   hcDetailList.addEventListener('click', (e) => {
     if (currentRole !== 'admin') return;
@@ -1024,14 +1107,15 @@
     const camperId = btn.dataset.id;
     const action = btn.dataset.action;
     const bunkAtClick = currentDetailBunk;
+    const entry = hcEntry(bunkAtClick, ownerUid, camperId);
     if (action === 'plus' || action === 'minus') {
-      const entry = (lastBunkMap[bunkAtClick] || []).find(x => x.ownerUid === ownerUid && x.id === camperId);
       pendingAmount = { context: 'admin', ownerUid, id: camperId, bunk: bunkAtClick, sign: action === 'plus' ? 1 : -1 };
       amountTitle.textContent = (action === 'plus' ? 'Add to ' : 'Subtract from ') + (entry ? entry.name : 'camper');
       amountOverlay.style.display = 'flex';
     } else if (action === 'del') {
+      if (!entry) return;
       pendingAdminDelete = { ownerUid, camperId, bunk: bunkAtClick };
-      adminDelCamperPrompt.innerHTML = `Type <strong>${escapeHtml(btn.dataset.name)}</strong> exactly to remove them.`;
+      adminDelCamperPrompt.innerHTML = `Type <strong>${escapeHtml(entry.name)}</strong> exactly to remove them.`;
       adminDelCamperInput.value = '';
       adminConfirmDelCamper.disabled = true;
       adminDelCamperOverlay.style.display = 'flex';
@@ -1040,8 +1124,8 @@
   });
 
   adminDelCamperInput.addEventListener('input', () => {
-    const list = lastBunkMap[currentDetailBunk] || [];
-    const entry = pendingAdminDelete && list.find(e => e.ownerUid === pendingAdminDelete.ownerUid && e.id === pendingAdminDelete.camperId);
+    const entry = pendingAdminDelete &&
+      hcEntry(currentDetailBunk, pendingAdminDelete.ownerUid, pendingAdminDelete.camperId);
     adminConfirmDelCamper.disabled = !entry || adminDelCamperInput.value.trim() !== entry.name;
   });
   adminDelCamperInput.addEventListener('keydown', (e) => {
@@ -1078,6 +1162,7 @@
     const bunk = currentDetailBunk;
     confirmDeleteBunk.disabled = true;
     const owners = lastBunkOwners[bunk] || new Set();
+    owners.forEach(dropPendingAdmin);
     for (const uid of owners) {
       const ref = doc(db, 'userData', uid);
       await setDoc(ref, { campers: [], bunkNumber: deleteField() }, { merge: true });
@@ -1087,8 +1172,14 @@
     await loadAllBunks();
   });
 
-  hcRefreshBtn.addEventListener('click', loadAllBunks);
-  hcBackBtn.addEventListener('click', () => showScreen('hc'));
+  hcRefreshBtn.addEventListener('click', async () => {
+    await flushAllAdmin(); // otherwise the reload would read back pre-edit counts
+    loadAllBunks();
+  });
+  hcBackBtn.addEventListener('click', () => {
+    flushAllAdmin();
+    showScreen('hc');
+  });
   hcLogoutBtn.addEventListener('click', () => {
     logoutOverlay.style.display = 'flex';
   });
@@ -1126,59 +1217,117 @@
   });
 
   // ---- Firestore load/save ----
+  let statusTimer = null;
+
   function setStatus(msg) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
     statusLine.textContent = msg;
+  }
+
+  // Show a transient message, then fall back to the camper count. The timer is
+  // tracked so overlapping saves can't leave a stale "saved" on screen.
+  function flashStatus(msg) {
+    clearTimeout(statusTimer);
+    statusLine.textContent = msg;
+    statusTimer = setTimeout(() => {
+      statusTimer = null;
+      statusLine.textContent = trackedLabel();
+    }, 900);
   }
 
   function trackedLabel() {
     return campers.length + ' ' + (campers.length === 1 ? 'camper' : 'campers') + ' tracked';
   }
 
+  // Five taps on +/- used to mean five Firestore writes, each a network round
+  // trip. Amount changes are now coalesced into one write per idle window;
+  // discrete actions (add, remove, Save, logout, tab hidden) flush immediately
+  // so nothing is ever left unwritten.
+  const SAVE_DEBOUNCE_MS = 700;
   let saveChain = Promise.resolve();
+  let saveTimer = null;
+  let saveDirty = false;
 
-  async function saveCampers() {
+  function queueSave() {
+    saveDirty = true;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushSave, SAVE_DEBOUNCE_MS);
+  }
+
+  function discardPendingSave() {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    saveDirty = false;
+  }
+
+  // Add / remove / the Save button: write now, whether or not a debounced
+  // amount change happens to be pending.
+  function saveNow() {
+    saveDirty = true;
+    return flushSave();
+  }
+
+  function flushSave() {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    const uid = currentUid; // captured now: a logout may clear it mid-flight
+    if (!saveDirty || !uid) return saveChain;
+    saveDirty = false;
     const snapshot = campers.map(c => ({ ...c })); // freeze current state
     saveChain = saveChain.then(async () => {
       try {
-        const ref = doc(db, 'userData', currentUid);
-        await setDoc(ref, { campers: snapshot }, { merge: true });
-        setStatus('saved');
-        setTimeout(() => setStatus(trackedLabel()), 900);
+        await setDoc(doc(db, 'userData', uid), { campers: snapshot }, { merge: true });
+        flashStatus('saved');
       } catch (e) {
+        saveDirty = true; // stays pending so Save or the next edit retries it
         setStatus('save failed — try again');
       }
     });
     return saveChain;
   }
 
-  function render() {
-    listEl.innerHTML = '';
-    if (campers.length === 0) {
-      listEl.innerHTML = '<div class="empty">No campers yet. Tap ➕ to add one.</div>';
-      return;
-    }
-    campers.forEach(c => {
-      const row = document.createElement('div');
-      row.className = 'camper';
-      row.innerHTML = `
+  // The whole list is assembled as one HTML string (a single parse and layout
+  // pass, instead of one per row) and the rows are indexed by camper id so a
+  // count change can patch one text node rather than re-render everything.
+  let rowIndex = new Map();
+
+  function camperRowHtml(c) {
+    const id = escapeHtml(c.id);
+    return `<div class="camper">
         <div class="amountCircle">$${c.count}</div>
         <div class="info">
           <div class="name">${escapeHtml(c.name)}</div>
         </div>
         <div class="btns">
-          <button class="step minus" data-id="${c.id}" data-action="minus">−</button>
-          <button class="step plus" data-id="${c.id}" data-action="plus">+</button>
-          <button class="del" data-id="${c.id}" data-action="del">✕</button>
+          <button class="step minus" data-id="${id}" data-action="minus">−</button>
+          <button class="step plus" data-id="${id}" data-action="plus">+</button>
+          <button class="del" data-id="${id}" data-action="del">✕</button>
         </div>
-      `;
-      listEl.appendChild(row);
-    });
+      </div>`;
   }
 
+  function render() {
+    rowIndex = new Map();
+    if (campers.length === 0) {
+      listEl.innerHTML = '<div class="empty">No campers yet. Tap ➕ to add one.</div>';
+      return;
+    }
+    listEl.innerHTML = campers.map(camperRowHtml).join('');
+    const rows = listEl.children;
+    for (let i = 0; i < campers.length; i++) rowIndex.set(campers[i].id, rows[i]);
+  }
+
+  function patchCount(id, count) {
+    const row = rowIndex.get(id);
+    if (row) row.firstElementChild.textContent = '$' + count;
+  }
+
+  // Regex escape instead of the div/textContent trick: no DOM allocation per
+  // call, and it also escapes quotes, so values stay safe inside attributes.
+  const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   function escapeHtml(str) {
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
+    return String(str).replace(/[&<>"']/g, ch => HTML_ESCAPES[ch]);
   }
 
   listEl.addEventListener('click', (e) => {
@@ -1228,7 +1377,7 @@
     campers = campers.filter(c => c.id !== pendingDeleteId);
     closeDeleteModal();
     render();
-    saveCampers();
+    saveNow();
   });
 
   function makeId() {
@@ -1258,7 +1407,7 @@
     }
     campers.push({ id: makeId(), name, count: 0 });
     render();
-    saveCampers();
+    saveNow();
     closeAddModal();
   }
 
@@ -1267,23 +1416,22 @@
     pendingAmount = null;
   });
 
-  amountBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (!pendingAmount) return;
-      const delta = pendingAmount.sign * parseInt(btn.dataset.amt, 10);
-      if (pendingAmount.context === 'regular') {
-        const camper = campers.find(c => c.id === pendingAmount.id);
-        if (camper) {
-          camper.count = Math.max(0, camper.count + delta);
-          render();
-          saveCampers();
-        }
-      } else if (pendingAmount.context === 'admin') {
-        adminAdjustCount(pendingAmount.ownerUid, pendingAmount.id, delta, pendingAmount.bunk);
+  amountGrid.addEventListener('click', (e) => {
+    const btn = e.target.closest('.amountBtn');
+    if (!btn || !pendingAmount) return;
+    const delta = pendingAmount.sign * parseInt(btn.dataset.amt, 10);
+    if (pendingAmount.context === 'regular') {
+      const camper = campers.find(c => c.id === pendingAmount.id);
+      if (camper) {
+        camper.count = Math.max(0, camper.count + delta);
+        patchCount(camper.id, camper.count); // one text node, not a full re-render
+        queueSave();
       }
-      amountOverlay.style.display = 'none';
-      pendingAmount = null;
-    });
+    } else if (pendingAmount.context === 'admin') {
+      adminAdjustCount(pendingAmount.ownerUid, pendingAmount.id, delta, pendingAmount.bunk);
+    }
+    amountOverlay.style.display = 'none';
+    pendingAmount = null;
   });
 
   fabAdd.addEventListener('click', openAddModal);
@@ -1295,17 +1443,28 @@
   });
 
   // Tap outside any modal's content area closes/cancels it
-  [delOverlay, logoutOverlay, addOverlay, adminDelCamperOverlay, deleteBunkOverlay, forgotOverlay, amountOverlay].forEach(overlay => {
-    overlay.addEventListener('click', (e) => {
-      if (e.target !== overlay) return;
-      if (overlay === delOverlay) closeDeleteModal();
-      else if (overlay === logoutOverlay) logoutOverlay.style.display = 'none';
-      else if (overlay === addOverlay) closeAddModal();
-      else if (overlay === adminDelCamperOverlay) { adminDelCamperOverlay.style.display = 'none'; pendingAdminDelete = null; }
-      else if (overlay === deleteBunkOverlay) deleteBunkOverlay.style.display = 'none';
-      else if (overlay === forgotOverlay) forgotOverlay.style.display = 'none';
-      else if (overlay === amountOverlay) { amountOverlay.style.display = 'none'; pendingAmount = null; }
-    });
+  const overlayClosers = new Map([
+    [delOverlay, closeDeleteModal],
+    [addOverlay, closeAddModal],
+    [logoutOverlay, () => { logoutOverlay.style.display = 'none'; }],
+    [deleteBunkOverlay, () => { deleteBunkOverlay.style.display = 'none'; }],
+    [forgotOverlay, () => { forgotOverlay.style.display = 'none'; }],
+    [adminDelCamperOverlay, () => { adminDelCamperOverlay.style.display = 'none'; pendingAdminDelete = null; }],
+    [amountOverlay, () => { amountOverlay.style.display = 'none'; pendingAmount = null; }]
+  ]);
+  overlayClosers.forEach((close, overlay) => {
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  });
+
+  // Coalescing only pays off if the pending write can never be lost, so commit
+  // it the moment the page is backgrounded or closed. pagehide is the reliable
+  // one on iOS Safari, where unload frequently never fires.
+  function flushPendingWrites() {
+    return Promise.all([flushSave(), flushAllAdmin()]);
+  }
+  window.addEventListener('pagehide', flushPendingWrites);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushPendingWrites();
   });
 </script>
 
