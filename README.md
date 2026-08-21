@@ -1,5 +1,11 @@
 # GYdollars
 
+> ### ⚠️ Not working yet
+>
+> This isn't ready to use. Signing in and saving don't work right now, so
+> don't hand it out to counselors. Everything below describes how it's meant
+> to work once it's up and running.
+
 **$GY Counter** — the Gan Yisroel dollar tracker for CGI Toronto 5786.
 
 Counselors keep track of how many $GY dollars each camper in their bunk has
