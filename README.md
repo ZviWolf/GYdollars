@@ -1,10 +1,9 @@
 # GYdollars
 
-> ### ⚠️ Not working yet
+> ### ⚠️ Currently out of service
 >
-> This isn't ready to use. Signing in and saving don't work right now, so
-> don't hand it out to counselors. Everything below describes how it's meant
-> to work once it's up and running.
+> The site is temporarily down and can't be used right now. Everything below
+> describes how it works when it's up.
 
 **$GY Counter** — the Gan Yisroel dollar tracker for CGI Toronto 5786.
 
